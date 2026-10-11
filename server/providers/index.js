@@ -1,22 +1,26 @@
 import pexels from './pexels.js';
-import pixabay from './pixabay.js';
+import { pixabayImages, pixabayVideos } from './pixabay.js';
 import unsplash from './unsplash.js';
 import wikimedia from './wikimedia.js';
 
 // To add a platform, create a connector with the same shape and list it here.
-export const providers = [pexels, pixabay, unsplash, wikimedia];
+export const providers = [pexels, pixabayImages, pixabayVideos, unsplash, wikimedia];
 
 export const providerById = Object.fromEntries(providers.map((p) => [p.id, p]));
 
 const ENV_KEYS = {
   pexels: 'PEXELS_API_KEY',
   pixabay: 'PIXABAY_API_KEY',
+  'pixabay-videos': 'PIXABAY_VIDEO_API_KEY',
   unsplash: 'UNSPLASH_ACCESS_KEY',
 };
 
 export function serverKeyFor(id) {
   const name = ENV_KEYS[id];
-  return name && typeof process !== 'undefined' ? process.env?.[name] || '' : '';
+  if (!name || typeof process === 'undefined') return '';
+  // One Pixabay key normally works for both APIs, so the image key is the fallback for videos.
+  if (id === 'pixabay-videos') return process.env?.[name] || process.env?.PIXABAY_API_KEY || '';
+  return process.env?.[name] || '';
 }
 
 export function publicProviderInfo() {

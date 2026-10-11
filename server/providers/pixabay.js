@@ -6,14 +6,18 @@ function splitTags(tags = '') {
   return String(tags).split(',').map((t) => t.trim()).filter(Boolean);
 }
 
-export default {
+const LICENSE = 'Pixabay Content License (free to use, no attribution required)';
+
+// Pixabay has separate APIs for images and videos, so each gets its own connector and key.
+export const pixabayImages = {
   id: 'pixabay',
-  name: NAME,
-  supports: ['image', 'video'],
+  name: 'Pixabay Images',
+  supports: ['image'],
   requiresKey: true,
-  signupUrl: 'https://pixabay.com/api/docs/',
-  license: 'Pixabay Content License (free to use, no attribution required)',
-  mediaHosts: ['pixabay.com', 'vimeocdn.com'],
+  signupUrl: 'https://pixabay.com/api/docs/#api_search_images',
+  keyHint: 'Pixabay image API key',
+  license: LICENSE,
+  mediaHosts: ['pixabay.com'],
 
   async searchImages(query, { key, perPage = 15, page = 1 }) {
     const url = new URL('https://pixabay.com/api/');
@@ -43,6 +47,17 @@ export default {
       position: i,
     }));
   },
+};
+
+export const pixabayVideos = {
+  id: 'pixabay-videos',
+  name: 'Pixabay Videos',
+  supports: ['video'],
+  requiresKey: true,
+  signupUrl: 'https://pixabay.com/api/docs/#api_search_videos',
+  keyHint: 'Pixabay video API key',
+  license: LICENSE,
+  mediaHosts: ['pixabay.com', 'vimeocdn.com'],
 
   async searchVideos(query, { key, perPage = 15, page = 1, videoQuality = 'hd' }) {
     const url = new URL('https://pixabay.com/api/videos/');

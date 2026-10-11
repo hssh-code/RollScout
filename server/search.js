@@ -168,7 +168,7 @@ export class SearchRun {
     for (const [type, list] of [['image', images], ['video', videos]]) {
       const label = type === 'image' ? 'images' : 'videos';
       if (!this.active.some((a) => a.provider.supports.includes(type))) {
-        notes.push(`None of the connected platforms provide ${label}. Add a Pexels or Pixabay key to get ${label}.`);
+        notes.push(`None of the connected platforms provide ${label}. Add a key for a platform that provides ${label} (for example Pexels${type === 'video' ? ' or Pixabay Videos' : ' or Pixabay Images'}).`);
       } else if (list.length < MIN_PER_TYPE) {
         notes.push(`Only ${list.length} ${label} could be found for this topic across the connected platforms.`);
       } else if (list.length < this.perTopic) {

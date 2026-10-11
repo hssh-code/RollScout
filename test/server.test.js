@@ -22,7 +22,7 @@ const post = (path, body) => fetch(`${base}${path}`, {
 
 test('config lists the platforms', async () => {
   const data = await (await fetch(`${base}/api/config`)).json();
-  assert.deepEqual(data.providers.map((p) => p.id), ['pexels', 'pixabay', 'unsplash', 'wikimedia']);
+  assert.deepEqual(data.providers.map((p) => p.id), ['pexels', 'pixabay', 'pixabay-videos', 'unsplash', 'wikimedia']);
   assert.equal(data.limits.minPerType, 5);
 });
 

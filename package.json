@@ -1,6 +1,6 @@
 {
   "name": "rollscout",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Upload a script, RollScout finds matching images and videos across stock media platforms, grouped by topic, ready to download.",
   "type": "module",
   "main": "electron/main.js",

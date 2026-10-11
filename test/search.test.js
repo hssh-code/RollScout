@@ -62,7 +62,11 @@ test('merges platforms and keeps each file in one topic when there is enough', a
     [(u) => u.pathname === '/api/', (u) => json(pixabayHits(u.searchParams.get('q'), 12))],
     [(u) => u.pathname === '/api/videos/', (u) => json(pixabayHits(u.searchParams.get('q'), 12, true))],
   ]);
-  const active = resolveProviders({ pexels: { enabled: true, key: 'a' }, pixabay: { enabled: true, key: 'b' } });
+  const active = resolveProviders({
+    pexels: { enabled: true, key: 'a' },
+    pixabay: { enabled: true, key: 'b' },
+    'pixabay-videos': { enabled: true, key: 'c' },
+  });
   // Both topics get identical results from the mock, so the second must not repeat the first.
   const results = await searchAllTopics(
     [topic('t1', 'Forest', ['forest']), topic('t2', 'Forest again', ['forest'])],
@@ -83,7 +87,11 @@ test('a rejected key skips that platform and reports a warning', async () => {
     [(u) => u.pathname === '/api/videos/', (u) => json(pixabayHits(u.searchParams.get('q'), 10, true))],
   ]);
   const warnings = [];
-  const active = resolveProviders({ pexels: { enabled: true, key: 'bad' }, pixabay: { enabled: true, key: 'ok' } });
+  const active = resolveProviders({
+    pexels: { enabled: true, key: 'bad' },
+    pixabay: { enabled: true, key: 'ok' },
+    'pixabay-videos': { enabled: true, key: 'ok' },
+  });
   const [r] = await searchAllTopics([topic('t1', 'Sky', ['sky', 'clouds', 'sunset'])], active, { perTopic: 5 }, {
     onWarning: (m) => warnings.push(m),
   });
@@ -91,4 +99,36 @@ test('a rejected key skips that platform and reports a warning', async () => {
   assert.match(warnings[0], /Pexels: the API key was rejected/);
   assert.ok(calls.filter((c) => c.url.hostname === 'api.pexels.com').length <= 2);
   assert.equal(r.images.length, 5);
+});
+
+test('Pixabay image and video keys work independently', async () => {
+  const calls = mockFetch([
+    [(u) => u.pathname === '/api/', (u) => json(pixabayHits(u.searchParams.get('q'), 10))],
+    [(u) => u.pathname === '/api/videos/', () => json({}, 401)],
+  ]);
+  const warnings = [];
+  const active = resolveProviders({
+    pixabay: { enabled: true, key: 'image-key' },
+    'pixabay-videos': { enabled: true, key: 'wrong-video-key' },
+  });
+  const [r] = await searchAllTopics([topic('t1', 'Sky', ['sky'])], active, { perTopic: 5 }, {
+    onWarning: (m) => warnings.push(m),
+  });
+  // A rejected video key only switches off Pixabay Videos; images still come through.
+  assert.equal(r.images.length, 5);
+  assert.equal(r.videos.length, 0);
+  assert.match(warnings[0], /Pixabay Videos/);
+  assert.ok(calls.filter((c) => c.url.pathname === '/api/').every((c) => c.url.searchParams.get('key') === 'image-key'));
+  assert.ok(calls.filter((c) => c.url.pathname === '/api/videos/').every((c) => c.url.searchParams.get('key') === 'wrong-video-key'));
+});
+
+test('only the Pixabay card that has a key is searched', async () => {
+  const calls = mockFetch([
+    [(u) => u.pathname === '/api/videos/', (u) => json(pixabayHits(u.searchParams.get('q'), 10, true))],
+  ]);
+  const active = resolveProviders({ pixabay: { enabled: true, key: '' }, 'pixabay-videos': { enabled: true, key: 'v' } });
+  assert.deepEqual(active.map((a) => a.provider.id), ['pixabay-videos']);
+  const [r] = await searchAllTopics([topic('t1', 'Sea', ['sea'])], active, { perTopic: 5 });
+  assert.equal(r.videos.length, 5);
+  assert.ok(calls.every((c) => c.url.pathname === '/api/videos/'));
 });

@@ -163,8 +163,12 @@ function renderProviders(saved) {
     const savedEnabled = saved.enabled?.[p.id];
     state.platforms[p.id] = {
       enabled: savedEnabled ?? (p.requiresKey ? true : false),
-      key: saved.keys?.[p.id] || '',
+      key: saved.keys?.[p.id] ?? '',
     };
+    // Keys saved before Pixabay was split into two cards: reuse the old Pixabay key for videos.
+    if (p.id === 'pixabay-videos' && saved.keys && saved.keys[p.id] === undefined && saved.keys.pixabay) {
+      state.platforms[p.id].key = saved.keys.pixabay;
+    }
     const node = $('#tpl-provider').content.firstElementChild.cloneNode(true);
     node.querySelector('.provider-name').textContent = p.name;
     const badges = node.querySelector('.badges');

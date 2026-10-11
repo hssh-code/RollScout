@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import pexels from '../server/providers/pexels.js';
-import pixabay from '../server/providers/pixabay.js';
+import { pixabayImages, pixabayVideos } from '../server/providers/pixabay.js';
 import unsplash from '../server/providers/unsplash.js';
 import wikimedia from '../server/providers/wikimedia.js';
 import { isAllowedMediaUrl, isAllowedTrackUrl } from '../server/providers/index.js';
@@ -30,16 +30,22 @@ test('Pexels videos: picks the HD file by default and SD for preview', async () 
   assert.match(highest[0].downloadUrl, /uhd_3840/);
 });
 
-test('Pixabay: images and videos, skipping empty renditions', async () => {
-  mockFetch([
+test('Pixabay: images and videos are separate connectors with their own keys', async () => {
+  const calls = mockFetch([
     [(u) => u.pathname === '/api/', (u) => json(pixabayHits(u.searchParams.get('q'), 4))],
     [(u) => u.pathname === '/api/videos/', (u) => json(pixabayHits(u.searchParams.get('q'), 2, true))],
   ]);
-  const imgs = await pixabay.searchImages('forest', { key: 'PB' });
+  assert.deepEqual(pixabayImages.supports, ['image']);
+  assert.deepEqual(pixabayVideos.supports, ['video']);
+  const imgs = await pixabayImages.searchImages('forest', { key: 'IMG-KEY' });
   assert.equal(imgs.length, 4);
   assert.deepEqual(imgs[0].tags, ['forest', 'landscape']);
-  const vids = await pixabay.searchVideos('forest', { key: 'PB' });
+  const vids = await pixabayVideos.searchVideos('forest', { key: 'VID-KEY' });
   assert.match(vids[0].downloadUrl, /medium\.mp4$/);
+  assert.equal(calls[0].url.pathname, '/api/');
+  assert.equal(calls[0].url.searchParams.get('key'), 'IMG-KEY');
+  assert.equal(calls[1].url.pathname, '/api/videos/');
+  assert.equal(calls[1].url.searchParams.get('key'), 'VID-KEY');
   assert.match(vids[0].previewUrl, /medium\.jpg$/);
 });
 

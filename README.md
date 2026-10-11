@@ -15,7 +15,8 @@
 | Platform | Images | Videos | Key | Get a key |
 |---|---|---|---|---|
 | Pexels | ✓ | ✓ | Required (free) | https://www.pexels.com/api/ |
-| Pixabay | ✓ | ✓ | Required (free) | https://pixabay.com/api/docs/ |
+| Pixabay Images | ✓ | | Required (free, image API key) | https://pixabay.com/api/docs/#api_search_images |
+| Pixabay Videos | | ✓ | Required (free, video API key) | https://pixabay.com/api/docs/#api_search_videos |
 | Unsplash | ✓ | | Required (free, use the app's Access Key) | https://unsplash.com/developers |
 | Wikimedia Commons | ✓ | ✓ | Not needed (opt in) | https://commons.wikimedia.org/ |
 
@@ -72,7 +73,7 @@ Optional environment variables (handy when hosting it for a team, so people do n
 | Variable | Purpose |
 |---|---|
 | `PORT` / `HOST` | Where the server listens (default `127.0.0.1:3000`; use `HOST=0.0.0.0` to expose it) |
-| `PEXELS_API_KEY`, `PIXABAY_API_KEY`, `UNSPLASH_ACCESS_KEY` | Server-side platform keys, used when a user leaves the field empty |
+| `PEXELS_API_KEY`, `PIXABAY_API_KEY` (images), `PIXABAY_VIDEO_API_KEY` (videos, falls back to the image key), `UNSPLASH_ACCESS_KEY` | Server-side platform keys, used when a user leaves the field empty |
 | `ANTHROPIC_API_KEY` | Server-side key for AI topic detection |
 
 ## Privacy and licensing
