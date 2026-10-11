@@ -102,7 +102,8 @@ function saveBlob(blob, filename) {
   document.body.append(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  // Keep the file available long enough for a slow "Save as" dialog.
+  setTimeout(() => URL.revokeObjectURL(url), 30 * 60 * 1000);
 }
 
 async function fetchBytes(url) {
@@ -136,41 +137,62 @@ function creditsText(entries) {
   return lines.join('\n');
 }
 
-// Builds the ZIP in the browser. Files are stored uncompressed (media is already compressed).
-export async function downloadZip({ name, items, unsplashKey }, onProgress = () => {}) {
-  const { Zip, ZipPassThrough, strToU8 } = await import('./vendor/fflate.js');
-  const chunks = [];
-  const zip = new Zip((err, chunk) => {
-    if (!err) chunks.push(chunk);
+// Asks where to save the ZIP. Must be called straight from a click, before any await.
+// Chrome and Edge then stream the ZIP directly into that file, so even very large
+// downloads never sit in memory. Other browsers return null and use the fallback below.
+export function chooseZipTarget(filename) {
+  if (typeof window.showSaveFilePicker !== 'function') return Promise.resolve(null);
+  return window.showSaveFilePicker({
+    suggestedName: filename,
+    types: [{ description: 'ZIP archive', accept: { 'application/zip': ['.zip'] } }],
   });
-  const add = (path, bytes) => {
-    const entry = new ZipPassThrough(path);
-    zip.add(entry);
-    entry.push(bytes, true);
-  };
-  const used = new Set();
+}
+
+// Builds the ZIP as a stream: each file is fetched only when the ZIP writer reaches it,
+// and its bytes flow straight through to the output. Files are stored uncompressed
+// (media is already compressed). ZIP64 is used automatically for archives over 4 GB.
+export async function downloadZip({ name, items, unsplashKey }, { target = null, onProgress = () => {} } = {}) {
+  const { downloadZip: makeZip } = await import('./vendor/client-zip.js');
   const written = [];
   const failed = [];
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    let path = item.path;
-    for (let n = 2; used.has(path); n++) path = item.path.replace(/(\.[^./]+)?$/, `-${n}$1`);
-    used.add(path);
-    onProgress(i, items.length);
-    try {
-      add(path, await fetchBytes(item.url));
+  const used = new Set();
+
+  async function* entries() {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      let path = item.path;
+      for (let n = 2; used.has(path); n++) path = item.path.replace(/(\.[^./]+)?$/, `-${n}$1`);
+      used.add(path);
+      onProgress(i, items.length);
+      let res;
+      try {
+        res = await fetch(item.url);
+        if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+      } catch {
+        failed.push(`${path}\n  Download it here: ${item.url}`);
+        continue;
+      }
       written.push({ ...item, path });
       if (item.trackUrl) trackUnsplash(item.trackUrl, unsplashKey);
-    } catch {
-      failed.push(`${path}\n  Download it here: ${item.url}`);
+      yield { name: path, input: res, lastModified: new Date() };
+    }
+    onProgress(items.length, items.length);
+    if (written.length) yield { name: 'CREDITS.txt', input: creditsText(written), lastModified: new Date() };
+    if (failed.length) {
+      yield {
+        name: 'FAILED.txt',
+        input: `These files could not be added from the web version (the platform blocks it).\nOpen each link to save it, or use the RollScout desktop app, which has no such limit.\n\n${failed.join('\n\n')}\n`,
+        lastModified: new Date(),
+      };
     }
   }
-  if (written.length) add('CREDITS.txt', strToU8(creditsText(written)));
-  if (failed.length) {
-    add('FAILED.txt', strToU8(`These files could not be added from the web version (the platform blocks it).\nOpen each link to save it, or use the RollScout desktop app, which has no such limit.\n\n${failed.join('\n\n')}\n`));
+
+  const zip = makeZip(entries());
+  if (target) {
+    await zip.body.pipeTo(await target.createWritable());
+  } else {
+    // Fallback: the browser assembles the file (it can keep large ones on disk), then saves it.
+    saveBlob(await zip.blob(), `${name || 'rollscout'}.zip`);
   }
-  zip.end();
-  onProgress(items.length, items.length);
-  saveBlob(new Blob(chunks, { type: 'application/zip' }), `${name || 'rollscout'}.zip`);
   return { added: written.length, failed: failed.length };
 }

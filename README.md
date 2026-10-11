@@ -53,6 +53,7 @@ Open **https://hssh-code.github.io/RollScout/** in Chrome or Edge and click **In
 The web version runs entirely in your browser: your API keys stay in the browser and searches go straight to each platform. Two small differences from the desktop app:
 
 - AI topic detection is not available (the built-in detector is used).
+- ZIP files are built in the browser. Chrome and Edge ask where to save the ZIP first and then write it straight to that file, so large downloads stay smooth; keep the page open until it says the ZIP is saved.
 - A few platforms do not allow websites to download their files. When that happens RollScout opens the file in a new tab so you can save it, and the ZIP includes a `FAILED.txt` with links. The desktop app has no such limit.
 
 The same **Install app** button also appears when you run RollScout yourself with `npm start` and open it in Chrome or Edge.

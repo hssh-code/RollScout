@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const out = path.join(root, process.argv[2] || '_site');
+const out = path.resolve(root, process.argv[2] || '_site');
 const r = (...p) => path.join(root, ...p);
 
 await rm(out, { recursive: true, force: true });
@@ -22,6 +22,6 @@ await mkdir(vendor, { recursive: true });
 await cp(r('node_modules', 'mammoth', 'mammoth.browser.min.js'), path.join(vendor, 'mammoth.browser.min.js'));
 await cp(r('node_modules', 'pdfjs-dist', 'build', 'pdf.min.mjs'), path.join(vendor, 'pdf.min.mjs'));
 await cp(r('node_modules', 'pdfjs-dist', 'build', 'pdf.worker.min.mjs'), path.join(vendor, 'pdf.worker.min.mjs'));
-await cp(r('node_modules', 'fflate', 'esm', 'browser.js'), path.join(vendor, 'fflate.js'));
+await cp(r('node_modules', 'client-zip', 'index.js'), path.join(vendor, 'client-zip.js'));
 
 console.log(`Web version built in ${path.relative(root, out)}/`);

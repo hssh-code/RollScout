@@ -195,6 +195,7 @@ input:focus, select:focus, textarea:focus, button:focus-visible, a:focus-visible
 .banner { padding: 10px 14px; border-radius: 10px; margin: 10px 0; font-size: .9rem; }
 .banner.warn { background: var(--warn-bg); color: var(--warn-ink); }
 .banner.info { background: var(--surface-2); color: var(--muted); margin: 0 0 14px; }
+.banner.ok { background: var(--surface-2); color: var(--ok); }
 .banner.err { background: var(--warn-bg); color: var(--err); }
 
 .topic-list { display: flex; flex-direction: column; gap: 12px; }

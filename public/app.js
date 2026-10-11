@@ -563,6 +563,68 @@ function renderTopicResult(i) {
   }
 }
 
+// Web version: the ZIP is built in this page, so it shows progress and keeps the page open until done.
+let zipBusy = false;
+
+function setZipStatus(text, kind = 'info') {
+  let bar = $('#zip-status');
+  if (!bar) {
+    bar = el('div', { id: 'zip-status', role: 'status' });
+    $('#toolbar').after(bar);
+  }
+  bar.className = `banner ${kind}`;
+  bar.textContent = text;
+  bar.hidden = !text;
+}
+
+function warnBeforeLeaving(e) {
+  e.preventDefault();
+  e.returnValue = '';
+}
+
+function zipInBrowser(payload, count) {
+  if (zipBusy) {
+    setZipStatus('A ZIP is already being saved. Please wait for it to finish.', 'warn');
+    return;
+  }
+  // Ask where to save right away: the browser only allows this directly after a click.
+  local.chooseZipTarget(`${payload.name}.zip`).then(async (target) => {
+    zipBusy = true;
+    document.querySelectorAll('#zip-all, #zip-selected, .topic-buttons .btn.primary, .type-head .btn').forEach((b) => { b.disabled = true; });
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    const how = target ? 'Saving' : 'Preparing';
+    try {
+      const { added, failed } = await local.downloadZip(payload, {
+        target,
+        onProgress: (done, total) => {
+          setZipStatus(done < total
+            ? `${how} ZIP: file ${done + 1} of ${total}. Keep this page open until it finishes.`
+            : `${how} ZIP: finishing...`);
+        },
+      });
+      setZipStatus(target
+        ? `ZIP saved with ${added} of ${count} files.`
+        : `ZIP ready with ${added} of ${count} files. Choose where to save it if your browser asks.`, 'ok');
+      if (failed) {
+        $('#warnings').append(el('div', {
+          class: 'banner warn',
+          text: `${failed} file(s) could not be added to the ZIP because the platform blocks downloads from websites. Their links are in FAILED.txt inside the ZIP. The desktop app does not have this limit.`,
+        }));
+      }
+    } catch (err) {
+      setZipStatus(`The ZIP could not be saved: ${err.message}`, 'err');
+    } finally {
+      zipBusy = false;
+      window.removeEventListener('beforeunload', warnBeforeLeaving);
+      document.querySelectorAll('#zip-all, .topic-buttons .btn.primary, .type-head .btn').forEach((b) => { b.disabled = false; });
+      updateSelectionUi();
+    }
+  }).catch((err) => {
+    // Closing the "Save as" window is not an error.
+    if (err?.name !== 'AbortError') setZipStatus(`The ZIP could not be saved: ${err.message}`, 'err');
+  });
+}
+
 function downloadZip(pairs, name) {
   if (!pairs.length) return;
   const items = pairs.map(([i, item]) => ({
@@ -578,18 +640,7 @@ function downloadZip(pairs, name) {
   }));
   const payload = { name, items, unsplashKey: state.platforms.unsplash?.key || '' };
   if (local) {
-    const summary = $('#results-summary');
-    const before = summary.textContent;
-    local.downloadZip(payload, (done, total) => {
-      summary.textContent = done < total ? `Preparing ZIP: ${done + 1} of ${total} files...` : before;
-    }).then(({ failed }) => {
-      if (failed) {
-        $('#warnings').append(el('div', {
-          class: 'banner warn',
-          text: `${failed} file(s) could not be added to the ZIP because the platform blocks downloads from websites. Their links are in FAILED.txt inside the ZIP. The desktop app does not have this limit.`,
-        }));
-      }
-    });
+    zipInBrowser(payload, pairs.length);
     return;
   }
   $('#zip-payload').value = JSON.stringify(payload);
