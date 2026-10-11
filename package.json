@@ -3,11 +3,15 @@
   "version": "1.0.0",
   "description": "Upload a script, RollScout finds matching images and videos across stock media platforms, grouped by topic, ready to download.",
   "type": "module",
-  "main": "server/index.js",
+  "main": "electron/main.js",
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "desktop": "electron .",
+    "dist:win": "electron-builder --win --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:linux": "electron-builder --linux --publish never"
   },
   "engines": {
     "node": ">=20"
@@ -21,5 +25,73 @@
     "multer": "^2.4.0",
     "pdf-parse": "^2.4.5",
     "zod": "^4.6.5"
-  }
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3"
+  },
+  "author": {
+    "name": "RollScout"
+  },
+  "homepage": "https://github.com/hssh-code/rollscout",
+  "build": {
+    "appId": "com.rollscout.app",
+    "productName": "RollScout",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**",
+      "server/**",
+      "public/**",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/pdfjs-dist/**",
+      "node_modules/@napi-rs/**"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.video",
+      "icon": "build/icon.png"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "artifactName": "RollScout-Setup-${version}.${ext}"
+    },
+    "dmg": {
+      "artifactName": "RollScout-${version}-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Video",
+      "icon": "build/icon.png",
+      "artifactName": "RollScout-${version}.${ext}"
+    }
+  },
+  "desktopName": "rollscout.desktop"
 }

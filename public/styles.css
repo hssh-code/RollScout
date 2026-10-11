@@ -65,6 +65,7 @@ h2 { font-size: 1.2rem; }
   z-index: 10;
 }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.2rem; letter-spacing: -.01em; }
+.topbar-right { display: flex; align-items: center; gap: 12px; }
 .tagline { margin: 0; color: var(--muted); font-size: .9rem; }
 
 .container { max-width: 1180px; margin: 0 auto; padding: 24px 16px 80px; }

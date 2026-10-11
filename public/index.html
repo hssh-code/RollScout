@@ -6,6 +6,9 @@
   <title>RollScout</title>
   <meta name="description" content="Upload a script and RollScout finds matching images and videos for every topic in it.">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="theme-color" content="#ff5a36">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -14,7 +17,10 @@
       <img src="favicon.svg" alt="" width="30" height="30">
       <span>RollScout</span>
     </div>
-    <p class="tagline">Script in. B-roll out.</p>
+    <div class="topbar-right">
+      <p class="tagline">Script in. B-roll out.</p>
+      <button class="btn small" id="install-app" type="button" hidden>Install app</button>
+    </div>
   </header>
 
   <main class="container">
@@ -61,7 +67,7 @@
       <div class="providers" id="providers"></div>
       <label class="check">
         <input type="checkbox" id="remember-keys">
-        <span>Remember my keys in this browser</span>
+        <span>Remember my keys on this device</span>
       </label>
 
       <details class="settings">

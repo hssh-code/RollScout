@@ -28,7 +28,29 @@ Adding another platform means writing one connector in `server/providers/` (see 
 
 **Tip:** visual cues in the script such as `[B-roll: aerial view of a city at night]` or a line starting `VISUAL:` are used as the first search phrase for that topic.
 
-## Run it
+## Get the app
+
+RollScout runs three ways. All of them look and work the same.
+
+### 1. Desktop app (Windows, macOS, Linux)
+
+No terminal and nothing else to install: the app has everything built in.
+
+1. Open the repository's **Actions** tab on GitHub, click the latest **Desktop apps** run, and download the file for your system under **Artifacts** (or download it from **Releases** if a release has been published).
+   - Windows: `RollScout-Setup-x.y.z.exe`
+   - macOS: `RollScout-x.y.z-arm64.dmg` (Apple Silicon, M1 or newer) or `RollScout-x.y.z-x64.dmg` (Intel)
+   - Linux: `RollScout-x.y.z.AppImage`
+2. Install it:
+   - **Windows:** run the `.exe`. If Windows SmartScreen says "Windows protected your PC", click **More info** then **Run anyway** (the app is not code-signed yet).
+   - **macOS:** open the `.dmg` and drag RollScout into Applications. The first time, right-click the app and choose **Open**. If macOS says the app "is damaged", open Terminal and run `xattr -cr /Applications/RollScout.app`, then open it again. Both messages appear only because the app is not signed with a paid Apple certificate.
+   - **Linux:** make the file executable (`chmod +x RollScout-*.AppImage`) and run it.
+
+### 2. Install from Chrome or Edge
+
+While RollScout is running (`npm start`, or on a server you host), open it in Chrome or Edge and click **Install app** in the top right (or the install icon in the address bar). It then opens in its own window and gets a Start menu, Dock or desktop shortcut like any other app.
+
+### 3. Run from source
+
 
 Requires Node.js 20 or newer.
 
@@ -57,7 +79,11 @@ Optional environment variables (handy when hosting it for a team, so people do n
 ```bash
 npm test        # unit and API tests (platform APIs are mocked)
 npm run dev     # restart on file changes
+npm run desktop # open the desktop app from source
+npm run dist:win | dist:mac | dist:linux   # build an installer for your own system
 ```
+
+Installers are built automatically by `.github/workflows/desktop.yml` on every push. Push a tag such as `v1.0.0` to publish them on a GitHub Release.
 
 Project layout:
 
@@ -71,6 +97,8 @@ server/
   rank.js           Relevance scoring
   download.js       Single file and ZIP downloads
   providers/        One connector per platform
-public/             Web interface (plain HTML, CSS, JS)
+electron/main.js    Desktop app (starts the server inside a native window)
+public/             Web interface (plain HTML, CSS, JS), installable as an app
+build/icon.png      Desktop app icon
 test/               node:test suites
 ```

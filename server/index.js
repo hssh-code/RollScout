@@ -137,10 +137,19 @@ export function createApp() {
   return app;
 }
 
+// Starts the server and resolves once it is listening. Port 0 picks a free port.
+export function startServer({ port = 3000, host = '127.0.0.1' } = {}) {
+  return new Promise((resolve, reject) => {
+    const server = createApp().listen(port, host);
+    server.once('listening', () => resolve(server));
+    server.once('error', reject);
+  });
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT) || 3000;
   const host = process.env.HOST || '127.0.0.1';
-  createApp().listen(port, host, () => {
+  startServer({ port, host }).then(() => {
     console.log(`RollScout is running at http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`);
   });
 }

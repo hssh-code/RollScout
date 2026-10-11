@@ -654,9 +654,35 @@ function allPairs() {
   return state.results.flatMap((r, i) => (r ? [...r.images, ...r.videos].map((it) => [i, it]) : []));
 }
 
+// ---------- install as an app (Chrome, Edge) ----------
+
+function initInstall() {
+  if ('serviceWorker' in navigator && window.isSecureContext) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
+  let deferred = null;
+  const btn = $('#install-app');
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferred = e;
+    btn.hidden = false;
+  });
+  btn.addEventListener('click', async () => {
+    if (!deferred) return;
+    deferred.prompt();
+    await deferred.userChoice.catch(() => {});
+    deferred = null;
+    btn.hidden = true;
+  });
+  window.addEventListener('appinstalled', () => {
+    btn.hidden = true;
+  });
+}
+
 // ---------- boot ----------
 
 async function boot() {
+  initInstall();
   initScript();
   try {
     const res = await fetch('/api/config');
