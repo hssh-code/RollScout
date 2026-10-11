@@ -588,6 +588,7 @@ function zipInBrowser(payload, count) {
     return;
   }
   // Ask where to save right away: the browser only allows this directly after a click.
+  if (typeof window.showSaveFilePicker === 'function') setZipStatus('Choose where to save the ZIP file...');
   local.chooseZipTarget(`${payload.name}.zip`).then(async (target) => {
     zipBusy = true;
     document.querySelectorAll('#zip-all, #zip-selected, .topic-buttons .btn.primary, .type-head .btn').forEach((b) => { b.disabled = true; });
@@ -620,8 +621,8 @@ function zipInBrowser(payload, count) {
       updateSelectionUi();
     }
   }).catch((err) => {
-    // Closing the "Save as" window is not an error.
-    if (err?.name !== 'AbortError') setZipStatus(`The ZIP could not be saved: ${err.message}`, 'err');
+    // Closing the "Save as" window just cancels.
+    setZipStatus(err?.name === 'AbortError' ? '' : `The ZIP could not be saved: ${err.message}`, 'err');
   });
 }
 
