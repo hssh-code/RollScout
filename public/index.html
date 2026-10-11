@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RollScout</title>
+  <meta name="description" content="Upload a script and RollScout finds matching images and videos for every topic in it.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="favicon.svg" alt="" width="30" height="30">
+      <span>RollScout</span>
+    </div>
+    <p class="tagline">Script in. B-roll out.</p>
+  </header>
+
+  <main class="container">
+    <ol class="stepper" aria-label="Progress">
+      <li data-step="1" class="active">Script</li>
+      <li data-step="2">Platforms</li>
+      <li data-step="3">Topics</li>
+      <li data-step="4">Media</li>
+    </ol>
+
+    <!-- Step 1: script -->
+    <section class="card" id="step-script">
+      <div class="card-head">
+        <span class="num">1</span>
+        <div>
+          <h2>Upload your script</h2>
+          <p class="muted">TXT, MD, DOCX, PDF, SRT, VTT, RTF or Fountain. You can also paste the text.</p>
+        </div>
+      </div>
+      <label class="dropzone" id="dropzone">
+        <input type="file" id="file-input" accept=".txt,.md,.markdown,.fountain,.srt,.vtt,.docx,.pdf,.rtf,text/plain">
+        <svg viewBox="0 0 24 24" width="34" height="34" aria-hidden="true"><path fill="currentColor" d="M12 3l5 5h-3v6h-4V8H7l5-5zm-7 14h14v2H5v-2z"/></svg>
+        <strong>Drop a script file here</strong>
+        <span class="muted">or click to choose one</span>
+      </label>
+      <div class="field">
+        <div class="field-row">
+          <label for="script-text">Script text</label>
+          <span class="muted small" id="word-count">0 words</span>
+        </div>
+        <textarea id="script-text" rows="9" placeholder="Paste your script here, or upload a file above. Headings (## Topic, SCENE 1, [INTRO]) and cues like [B-roll: city at night] help RollScout split it into topics."></textarea>
+      </div>
+    </section>
+
+    <!-- Step 2: platforms -->
+    <section class="card" id="step-platforms">
+      <div class="card-head">
+        <span class="num">2</span>
+        <div>
+          <h2>Connect platforms</h2>
+          <p class="muted">Add the API key of every platform you want searched. RollScout only searches the platforms you connect.</p>
+        </div>
+      </div>
+      <div class="providers" id="providers"></div>
+      <label class="check">
+        <input type="checkbox" id="remember-keys">
+        <span>Remember my keys in this browser</span>
+      </label>
+
+      <details class="settings">
+        <summary>Search settings</summary>
+        <div class="settings-grid">
+          <div class="field">
+            <label for="per-topic">Images and videos per topic</label>
+            <input type="number" id="per-topic" min="5" max="30" value="10">
+            <span class="muted small">At least 5 of each, when the platforms have them.</span>
+          </div>
+          <div class="field">
+            <label for="max-topics">Maximum topics</label>
+            <input type="number" id="max-topics" min="1" max="20" value="8">
+          </div>
+          <div class="field">
+            <label for="image-quality">Image size</label>
+            <select id="image-quality">
+              <option value="large">Large (about 1920px)</option>
+              <option value="original">Original (largest file)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="video-quality">Video quality</label>
+            <select id="video-quality">
+              <option value="sd">SD (about 960px)</option>
+              <option value="hd" selected>HD (about 1920px)</option>
+              <option value="highest">Highest available (can be 4K)</option>
+            </select>
+          </div>
+        </div>
+        <fieldset class="ai-box">
+          <legend>Topic detection</legend>
+          <label class="radio"><input type="radio" name="method" value="auto" checked> <span><strong>Built-in</strong> <span class="muted">Free and instant. Uses headings, paragraphs and keywords.</span></span></label>
+          <label class="radio"><input type="radio" name="method" value="ai"> <span><strong>AI (Claude)</strong> <span class="muted">Smarter topics and visual search phrases. Needs an Anthropic API key.</span></span></label>
+          <div class="field" id="ai-key-field" hidden>
+            <label for="anthropic-key">Anthropic API key</label>
+            <input type="password" id="anthropic-key" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
+            <span class="muted small" id="ai-server-note"></span>
+          </div>
+        </fieldset>
+      </details>
+
+      <div class="actions">
+        <button class="btn primary" id="find-topics">Find topics</button>
+        <span class="muted small" id="topics-status" role="status"></span>
+      </div>
+    </section>
+
+    <!-- Step 3: topics -->
+    <section class="card" id="step-topics" hidden>
+      <div class="card-head">
+        <span class="num">3</span>
+        <div>
+          <h2>Review topics</h2>
+          <p class="muted">Rename topics, edit search phrases, or add your own before searching.</p>
+        </div>
+      </div>
+      <div id="topics-warning" class="banner warn" hidden></div>
+      <div id="topic-list" class="topic-list"></div>
+      <div class="actions">
+        <button class="btn ghost" id="add-topic">+ Add topic</button>
+        <button class="btn primary" id="search-media">Search media</button>
+      </div>
+    </section>
+
+    <!-- Step 4: results -->
+    <section class="card" id="step-results" hidden>
+      <div class="card-head">
+        <span class="num">4</span>
+        <div>
+          <h2>Media found</h2>
+          <p class="muted" id="results-summary">Searching...</p>
+        </div>
+      </div>
+      <div class="progress" id="progress"><div class="bar" id="progress-bar"></div></div>
+      <div id="warnings"></div>
+      <div class="toolbar" id="toolbar">
+        <div class="toolbar-left">
+          <button class="btn small ghost" id="select-all">Select all</button>
+          <button class="btn small ghost" id="select-none">Clear</button>
+          <span class="muted small" id="selection-count">0 selected</span>
+        </div>
+        <div class="toolbar-right">
+          <button class="btn small" id="zip-selected" disabled>Download selected (ZIP)</button>
+          <button class="btn small primary" id="zip-all">Download everything (ZIP)</button>
+        </div>
+      </div>
+      <div id="results"></div>
+    </section>
+  </main>
+
+  <dialog id="viewer" class="viewer">
+    <div class="viewer-media" id="viewer-media"></div>
+    <div class="viewer-info">
+      <h3 id="viewer-title"></h3>
+      <p class="muted small" id="viewer-meta"></p>
+      <div class="viewer-actions">
+        <a class="btn small primary" id="viewer-download" href="#">Download</a>
+        <a class="btn small ghost" id="viewer-source" href="#" target="_blank" rel="noopener">View on platform</a>
+        <button class="btn small ghost" id="viewer-close">Close</button>
+      </div>
+    </div>
+  </dialog>
+
+  <form id="zip-form" method="post" action="/api/zip" hidden>
+    <input type="hidden" name="payload" id="zip-payload">
+  </form>
+
+  <template id="tpl-provider">
+    <div class="provider">
+      <div class="provider-head">
+        <strong class="provider-name"></strong>
+        <span class="badges"></span>
+      </div>
+      <div class="provider-body"></div>
+      <div class="provider-foot">
+        <a class="small provider-link" target="_blank" rel="noopener">Get a free key</a>
+        <span class="small provider-status" role="status"></span>
+      </div>
+    </div>
+  </template>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>
