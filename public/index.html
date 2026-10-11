@@ -64,6 +64,7 @@
           <p class="muted">Add the API key of every platform you want searched. RollScout only searches the platforms you connect.</p>
         </div>
       </div>
+      <p class="banner info" id="web-note" hidden>You are using the web version. Your keys stay in this browser and searches go straight to each platform. A few platforms block downloads from websites; if a file cannot be saved here, RollScout opens it in a new tab, and the desktop app has no such limit.</p>
       <div class="providers" id="providers"></div>
       <label class="check">
         <input type="checkbox" id="remember-keys">
@@ -172,7 +173,7 @@
     </div>
   </dialog>
 
-  <form id="zip-form" method="post" action="/api/zip" hidden>
+  <form id="zip-form" method="post" action="api/zip" hidden>
     <input type="hidden" name="payload" id="zip-payload">
   </form>
 

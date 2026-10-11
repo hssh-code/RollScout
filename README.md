@@ -45,9 +45,16 @@ No terminal and nothing else to install: the app has everything built in.
    - **macOS:** open the `.dmg` and drag RollScout into Applications. The first time, right-click the app and choose **Open**. If macOS says the app "is damaged", open Terminal and run `xattr -cr /Applications/RollScout.app`, then open it again. Both messages appear only because the app is not signed with a paid Apple certificate.
    - **Linux:** make the file executable (`chmod +x RollScout-*.AppImage`) and run it.
 
-### 2. Install from Chrome or Edge
+### 2. Web version (install from Chrome or Edge)
 
-While RollScout is running (`npm start`, or on a server you host), open it in Chrome or Edge and click **Install app** in the top right (or the install icon in the address bar). It then opens in its own window and gets a Start menu, Dock or desktop shortcut like any other app.
+Open **https://hssh-code.github.io/RollScout/** in Chrome or Edge and click **Install app** in the top right (or the install icon at the right end of the address bar). RollScout then opens in its own window with a Start menu, Dock or desktop shortcut, like any other app.
+
+The web version runs entirely in your browser: your API keys stay in the browser and searches go straight to each platform. Two small differences from the desktop app:
+
+- AI topic detection is not available (the built-in detector is used).
+- A few platforms do not allow websites to download their files. When that happens RollScout opens the file in a new tab so you can save it, and the ZIP includes a `FAILED.txt` with links. The desktop app has no such limit.
+
+The same **Install app** button also appears when you run RollScout yourself with `npm start` and open it in Chrome or Edge.
 
 ### 3. Run from source
 
@@ -85,6 +92,8 @@ npm run dist:win | dist:mac | dist:linux   # build an installer for your own sys
 
 Installers are built automatically by `.github/workflows/desktop.yml` on every push. Push a tag such as `v1.0.0` to publish them on a GitHub Release.
 
+The web version is built with `npm run build:web` (output in `_site/`) and published to GitHub Pages by `.github/workflows/website.yml`. One-time setup: in the repository go to **Settings > Pages** and set **Source** to **GitHub Actions**.
+
 Project layout:
 
 ```
@@ -98,6 +107,8 @@ server/
   download.js       Single file and ZIP downloads
   providers/        One connector per platform
 electron/main.js    Desktop app (starts the server inside a native window)
+public/static-api.js  Web version engine (does the server's work in the browser)
+scripts/build-web.mjs Builds the GitHub Pages web version
 public/             Web interface (plain HTML, CSS, JS), installable as an app
 build/icon.png      Desktop app icon
 test/               node:test suites

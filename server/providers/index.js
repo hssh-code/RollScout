@@ -16,7 +16,7 @@ const ENV_KEYS = {
 
 export function serverKeyFor(id) {
   const name = ENV_KEYS[id];
-  return name ? process.env[name] || '' : '';
+  return name && typeof process !== 'undefined' ? process.env?.[name] || '' : '';
 }
 
 export function publicProviderInfo() {

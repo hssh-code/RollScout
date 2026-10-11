@@ -1,7 +1,8 @@
 // Keeps the RollScout window loading quickly. The app shell is cached; API calls and
 // media always go to the network, and the shell is refreshed from the network when online.
-const CACHE = 'rollscout-shell-v1';
-const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/favicon.svg', '/manifest.webmanifest', '/icons/icon-192.png'];
+const CACHE = 'rollscout-shell-v2';
+// Relative paths so this works at the site root and under a GitHub Pages sub-path.
+const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'favicon.svg', 'manifest.webmanifest', 'icons/icon-192.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -17,7 +18,7 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-  if (event.request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
+  if (event.request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.includes('/api/')) return;
   event.respondWith(
     fetch(event.request)
       .then((res) => {
@@ -27,6 +28,6 @@ self.addEventListener('fetch', (event) => {
         }
         return res;
       })
-      .catch(() => caches.match(event.request).then((hit) => hit || caches.match('/'))),
+      .catch(() => caches.match(event.request).then((hit) => hit || caches.match('./'))),
   );
 });

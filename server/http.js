@@ -2,6 +2,9 @@
 
 export const USER_AGENT = 'RollScout/1.0 (+https://github.com/hssh-code/rollscout)';
 
+// The same connectors run on the server and, in the web version, directly in the browser.
+export const IN_BROWSER = typeof window !== 'undefined' && typeof document !== 'undefined';
+
 export class ProviderError extends Error {
   constructor(provider, status, message) {
     super(message);
@@ -25,11 +28,12 @@ export async function fetchJson(url, { headers = {}, provider = 'platform', time
   let res;
   try {
     res = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json', ...headers },
+      headers: { ...(IN_BROWSER ? {} : { 'User-Agent': USER_AGENT }), Accept: 'application/json', ...headers },
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (err) {
-    const reason = err.name === 'TimeoutError' ? 'timed out' : 'could not be reached';
+    const reason = err.name === 'TimeoutError' ? 'timed out' : 'could not be reached'
+      + (IN_BROWSER ? ' (the platform may not allow requests from this website)' : '');
     throw new ProviderError(provider, 0, `${provider}: the request ${reason}`);
   }
   if (!res.ok) {

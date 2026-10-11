@@ -3,6 +3,9 @@
 const $ = (sel) => document.querySelector(sel);
 const STORAGE_KEY = 'rollscout:v1';
 
+// In the web version there is no server; `local` is the in-browser engine (static-api.js).
+let local = null;
+
 const state = {
   config: null,
   platforms: {}, // id -> { enabled, key }
@@ -114,12 +117,17 @@ function updateWordCount() {
 async function uploadFile(file) {
   const dz = $('#dropzone');
   dz.querySelector('strong').textContent = `Reading ${file.name}...`;
-  const form = new FormData();
-  form.append('file', file);
   try {
-    const res = await fetch('/api/script', { method: 'POST', body: form });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Upload failed');
+    let data;
+    if (local) {
+      data = await local.parseScriptFile(file);
+    } else {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch('api/script', { method: 'POST', body: form });
+      data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+    }
     $('#script-text').value = data.text;
     updateWordCount();
     dz.querySelector('strong').textContent = `Loaded ${data.filename} (${data.words.toLocaleString()} words)`;
@@ -192,7 +200,9 @@ function renderProviders(saved) {
         setBusy(verify, true);
         markConnected(null, 'Checking...');
         try {
-          const r = await api('/api/verify', { provider: p.id, key: state.platforms[p.id].key });
+          const r = local
+            ? await local.verify(p.id, state.platforms[p.id].key)
+            : await api('api/verify', { provider: p.id, key: state.platforms[p.id].key });
           markConnected(r.ok, r.ok ? 'Connected' : r.message);
         } catch (err) {
           markConnected(false, err.message);
@@ -278,12 +288,10 @@ async function findTopics() {
   const method = document.querySelector('input[name=method]:checked').value;
   status.textContent = method === 'ai' ? 'Asking Claude to map out the script...' : 'Reading the script...';
   try {
-    const data = await api('/api/topics', {
-      text,
-      method,
-      anthropicKey: state.anthropicKey,
-      maxTopics: Number($('#max-topics').value) || 8,
-    });
+    const maxTopics = Number($('#max-topics').value) || 8;
+    const data = local
+      ? local.topics(text, maxTopics)
+      : await api('api/topics', { text, method, anthropicKey: state.anthropicKey, maxTopics });
     state.topics = data.topics.map((t) => ({ ...t, queries: [...t.queries] }));
     const warn = $('#topics-warning');
     warn.hidden = !data.warning;
@@ -367,12 +375,26 @@ function topicFolder(i) {
 }
 
 function downloadHref(item) {
-  return `/api/download?url=${encodeURIComponent(item.downloadUrl)}&name=${encodeURIComponent(itemFileName(item))}`;
+  if (local) return item.downloadUrl;
+  return `api/download?url=${encodeURIComponent(item.downloadUrl)}&name=${encodeURIComponent(itemFileName(item))}`;
+}
+
+// Click handler for single-file download links.
+function onDownloadClick(item) {
+  return (e) => {
+    if (local) {
+      e.preventDefault();
+      local.downloadOne(item.downloadUrl, itemFileName(item));
+    }
+    trackDownload(item);
+  };
 }
 
 function trackDownload(item) {
-  if (item.trackUrl) {
-    fetch('/api/track', {
+  if (local) {
+    local.trackUnsplash(item.trackUrl, state.platforms.unsplash?.key || '');
+  } else if (item.trackUrl) {
+    fetch('api/track', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: item.trackUrl, key: state.platforms.unsplash?.key || '' }),
@@ -417,7 +439,7 @@ function openViewer(item) {
   $('#viewer-meta').textContent = meta;
   const dl = $('#viewer-download');
   dl.href = downloadHref(item);
-  dl.onclick = () => trackDownload(item);
+  dl.onclick = onDownloadClick(item);
   $('#viewer-source').href = item.pageUrl || '#';
   dlg.showModal();
 }
@@ -461,7 +483,7 @@ function mediaCard(item, key) {
   box.checked = state.selected.has(key);
   box.addEventListener('change', () => toggleSelect(key, box.checked));
 
-  const dl = el('a', { class: 'btn small', href: downloadHref(item), text: 'Download', onclick: () => trackDownload(item) });
+  const dl = el('a', { class: 'btn small', href: downloadHref(item), text: 'Download', onclick: onDownloadClick(item) });
   return el('div', { class: `media${state.selected.has(key) ? ' selected' : ''}`, 'data-key': key },
     thumb,
     box,
@@ -550,8 +572,50 @@ function downloadZip(pairs, name) {
     providerName: item.providerName,
     trackUrl: item.trackUrl,
   }));
-  $('#zip-payload').value = JSON.stringify({ name, items, unsplashKey: state.platforms.unsplash?.key || '' });
+  const payload = { name, items, unsplashKey: state.platforms.unsplash?.key || '' };
+  if (local) {
+    const summary = $('#results-summary');
+    const before = summary.textContent;
+    local.downloadZip(payload, (done, total) => {
+      summary.textContent = done < total ? `Preparing ZIP: ${done + 1} of ${total} files...` : before;
+    }).then(({ failed }) => {
+      if (failed) {
+        $('#warnings').append(el('div', {
+          class: 'banner warn',
+          text: `${failed} file(s) could not be added to the ZIP because the platform blocks downloads from websites. Their links are in FAILED.txt inside the ZIP. The desktop app does not have this limit.`,
+        }));
+      }
+    });
+    return;
+  }
+  $('#zip-payload').value = JSON.stringify(payload);
   $('#zip-form').submit();
+}
+
+async function streamSearch(body, handle) {
+  const res = await fetch('api/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Search failed (${res.status})`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (value) buffer += decoder.decode(value, { stream: true });
+    let nl;
+    while ((nl = buffer.indexOf('\n')) !== -1) {
+      const line = buffer.slice(0, nl).trim();
+      buffer = buffer.slice(nl + 1);
+      if (line) handle(JSON.parse(line));
+    }
+    if (done) break;
+  }
 }
 
 async function searchMedia() {
@@ -593,52 +657,33 @@ async function searchMedia() {
   $('#step-results').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   let done = 0;
+  const handle = (msg) => {
+    if (msg.type === 'start') {
+      $('#results-summary').textContent = `Searching ${msg.topics} topics on ${msg.platforms.join(', ')}...`;
+    } else if (msg.type === 'topic') {
+      state.results[msg.index] = msg.result;
+      renderTopicResult(msg.index);
+      done += 1;
+      $('#progress-bar').style.width = `${Math.round((done / topics.length) * 100)}%`;
+      $('#toolbar').hidden = false;
+    } else if (msg.type === 'warning') {
+      $('#warnings').append(el('div', { class: 'banner warn', text: msg.message }));
+    } else if (msg.type === 'error') {
+      $('#warnings').append(el('div', { class: 'banner err', text: msg.message }));
+    }
+  };
+  const body = {
+    topics,
+    platforms,
+    options: {
+      perTopic: Number($('#per-topic').value) || 10,
+      imageQuality: $('#image-quality').value,
+      videoQuality: $('#video-quality').value,
+    },
+  };
   try {
-    const res = await fetch('/api/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        topics,
-        platforms,
-        options: {
-          perTopic: Number($('#per-topic').value) || 10,
-          imageQuality: $('#image-quality').value,
-          videoQuality: $('#video-quality').value,
-        },
-      }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || `Search failed (${res.status})`);
-    }
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    for (;;) {
-      const { value, done: finished } = await reader.read();
-      if (value) buffer += decoder.decode(value, { stream: true });
-      let nl;
-      while ((nl = buffer.indexOf('\n')) !== -1) {
-        const line = buffer.slice(0, nl).trim();
-        buffer = buffer.slice(nl + 1);
-        if (!line) continue;
-        const msg = JSON.parse(line);
-        if (msg.type === 'start') {
-          $('#results-summary').textContent = `Searching ${msg.topics} topics on ${msg.platforms.join(', ')}...`;
-        } else if (msg.type === 'topic') {
-          state.results[msg.index] = msg.result;
-          renderTopicResult(msg.index);
-          done += 1;
-          $('#progress-bar').style.width = `${Math.round((done / topics.length) * 100)}%`;
-          $('#toolbar').hidden = false;
-        } else if (msg.type === 'warning') {
-          $('#warnings').append(el('div', { class: 'banner warn', text: msg.message }));
-        } else if (msg.type === 'error') {
-          $('#warnings').append(el('div', { class: 'banner err', text: msg.message }));
-        }
-      }
-      if (finished) break;
-    }
+    if (local) await local.search(body, handle);
+    else await streamSearch(body, handle);
   } catch (err) {
     $('#warnings').append(el('div', { class: 'banner err', text: err.message }));
   }
@@ -658,7 +703,7 @@ function allPairs() {
 
 function initInstall() {
   if ('serviceWorker' in navigator && window.isSecureContext) {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    navigator.serviceWorker.register('sw.js').catch(() => {});
   }
   let deferred = null;
   const btn = $('#install-app');
@@ -685,11 +730,23 @@ async function boot() {
   initInstall();
   initScript();
   try {
-    const res = await fetch('/api/config');
+    const res = await fetch('api/config');
+    if (!res.ok || !(res.headers.get('content-type') || '').includes('json')) throw new Error('no server');
     state.config = await res.json();
   } catch {
-    $('#providers').append(el('div', { class: 'banner err', text: 'Could not reach the RollScout server.' }));
-    return;
+    // No RollScout server here (for example on GitHub Pages): run everything in the browser.
+    try {
+      local = await import('./static-api.js');
+      state.config = local.config();
+    } catch {
+      $('#providers').append(el('div', { class: 'banner err', text: 'RollScout could not start. Try reloading the page.' }));
+      return;
+    }
+  }
+  if (local) {
+    document.querySelector('input[name=method][value=ai]').closest('label').hidden = true;
+    document.querySelector('input[name=method][value=auto]').checked = true;
+    $('#web-note').hidden = false;
   }
   const saved = loadSaved();
   renderProviders(saved);

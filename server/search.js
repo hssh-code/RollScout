@@ -1,5 +1,4 @@
 // Runs the searches for every topic across the platforms the user connected.
-import { createHash } from 'node:crypto';
 import { providers, serverKeyFor } from './providers/index.js';
 import { topicTerms, scoreItem } from './rank.js';
 import { words, isContentWord } from './text.js';
@@ -11,6 +10,16 @@ const TYPES = ['image', 'video'];
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const CACHE_MAX = 400;
 const cache = new Map();
+
+// Short fingerprint so cached results are kept per API key without storing the key itself.
+function fingerprint(key) {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(16);
+}
 
 function cacheGet(key) {
   const hit = cache.get(key);
@@ -80,7 +89,7 @@ export class SearchRun {
 
   async query({ provider, key }, type, q, page = 1) {
     if (this.disabled.has(provider.id) || !provider.supports.includes(type)) return [];
-    const keyHash = key ? createHash('sha256').update(key).digest('hex').slice(0, 12) : '-';
+    const keyHash = key ? fingerprint(key) : '-';
     const ck = [provider.id, type, q.toLowerCase(), page, this.perPage, this.imageQuality, this.videoQuality, keyHash].join('|');
     const cached = cacheGet(ck);
     if (cached) return cached.map((i) => ({ ...i }));

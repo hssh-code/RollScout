@@ -11,7 +11,8 @@
     "desktop": "electron .",
     "dist:win": "electron-builder --win --publish never",
     "dist:mac": "electron-builder --mac --publish never",
-    "dist:linux": "electron-builder --linux --publish never"
+    "dist:linux": "electron-builder --linux --publish never",
+    "build:web": "node scripts/build-web.mjs"
   },
   "engines": {
     "node": ">=20"
@@ -28,7 +29,8 @@
   },
   "devDependencies": {
     "electron": "^44.7.0",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "fflate": "^0.8.3"
   },
   "author": {
     "name": "RollScout"
