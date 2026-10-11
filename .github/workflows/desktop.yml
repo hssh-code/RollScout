@@ -2,12 +2,18 @@ name: Desktop apps
 
 # Builds the Windows, macOS and Linux installers.
 # Every push uploads them to the workflow run (Actions tab > run > Artifacts).
-# Pushing a tag like v1.0.0 also publishes them on a GitHub Release.
+# A GitHub Release with the installers is published when a tag like v1.0.0 is pushed,
+# or when the workflow is run by hand (Actions > Desktop apps > Run workflow) with a version.
 on:
   push:
     branches: ['**']
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Publish a release with this version tag (for example v1.0.0). Leave empty to only build.'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -49,8 +55,28 @@ jobs:
           name: ${{ matrix.name }}
           path: ${{ matrix.files }}
           if-no-files-found: error
-      - name: Publish to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+
+  release:
+    needs: build
+    if: github.ref_type == 'tag' || inputs.version != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
         with:
-          files: ${{ matrix.files }}
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: RollScout ${{ github.ref_type == 'tag' && github.ref_name || inputs.version }}
+          body: |
+            Download the installer for your computer below.
+
+            - **Windows:** `RollScout-Setup-*.exe`. If SmartScreen appears, click *More info* then *Run anyway*.
+            - **Mac with Apple Silicon (M1 or newer):** `RollScout-*-arm64.dmg`
+            - **Mac with Intel:** `RollScout-*-x64.dmg`
+            - **Linux:** `RollScout-*.AppImage`
+
+            On a Mac, drag RollScout into Applications, then right-click it and choose *Open* the first time. If macOS says it is damaged, run `xattr -cr /Applications/RollScout.app` in Terminal.
+          files: dist/*
