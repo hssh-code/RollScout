@@ -20,7 +20,7 @@ test('only platforms with a key (or no key requirement) are used', () => {
   assert.deepEqual(active.map((a) => a.provider.id), ['pexels', 'wikimedia']);
 });
 
-test('collects at least 5 images and 5 videos per topic across several queries', async () => {
+test('keeps searching more phrases until it has the number asked for', async () => {
   // Each query only returns 2 results, so the search has to keep going.
   mockFetch([
     [(u) => u.pathname === '/v1/search', (u) => json(pexelsPhotos(u.searchParams.get('query'), 2, u.searchParams.get('query').length * 10))],
@@ -44,8 +44,8 @@ test('reports a shortfall when the platforms do not have enough', async () => {
   assert.equal(r.images.length, 2);
   assert.equal(r.videos.length, 0);
   assert.equal(r.short.images, true);
-  assert.ok(r.notes.some((n) => /Only 2 images/.test(n)));
-  assert.ok(r.notes.some((n) => /Only 0 videos/.test(n)));
+  assert.ok(r.notes.some((n) => /Only 2 of the 8 requested images/.test(n)));
+  assert.ok(r.notes.some((n) => /Only 0 of the 8 requested videos/.test(n)));
 });
 
 test('explains when no connected platform offers videos', async () => {
@@ -131,4 +131,19 @@ test('only the Pixabay card that has a key is searched', async () => {
   const [r] = await searchAllTopics([topic('t1', 'Sea', ['sea'])], active, { perTopic: 5 });
   assert.equal(r.videos.length, 5);
   assert.ok(calls.every((c) => c.url.pathname === '/api/videos/'));
+});
+
+test('returns exactly the number of images and videos asked for', async () => {
+  mockFetch([
+    [(u) => u.pathname === '/v1/search', (u) => json(pexelsPhotos(u.searchParams.get('query'), Number(u.searchParams.get('per_page'))))],
+    [(u) => u.pathname === '/videos/search', (u) => json(pexelsVideos(u.searchParams.get('query'), Number(u.searchParams.get('per_page'))))],
+  ]);
+  const active = resolveProviders({ pexels: { enabled: true, key: 'k' } });
+  for (const n of [1, 3, 12, 30]) {
+    clearSearchCache();
+    const [r] = await searchAllTopics([topic('t1', 'Forest', ['forest', 'pine trees'])], active, { perTopic: n });
+    assert.equal(r.images.length, n, `${n} images`);
+    assert.equal(r.videos.length, n, `${n} videos`);
+    assert.deepEqual(r.notes, []);
+  }
 });

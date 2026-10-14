@@ -7,7 +7,7 @@
 1. **Upload the script.** TXT, Markdown, DOCX, PDF, SRT, VTT, RTF or Fountain, or paste the text.
 2. **Connect platforms.** Paste the API key of each platform you want searched. Only connected platforms are used.
 3. **Review topics.** RollScout splits the script into topics and writes search phrases for each. Rename topics, edit phrases or add your own.
-4. **Get media.** For every topic RollScout searches all connected platforms, ranks the results by relevance and shows at least **5 images and 5 videos** (10 of each by default, up to 30). If the connected platforms together have fewer than 5, it says so for that topic.
+4. **Get media.** For every topic RollScout searches all connected platforms, ranks the results by relevance and shows the number of images and videos you choose under *Search settings* (10 of each by default, anywhere from 1 to 30). If the connected platforms together have fewer, it says so for that topic.
 5. **Download.** Single files, one topic, only a topic's images or videos, your selection, or everything. ZIPs are organised as `01-topic-name/images/...` and `01-topic-name/videos/...` and include a `CREDITS.txt` with author, source page and license for every file.
 
 ## Supported platforms

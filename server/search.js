@@ -3,7 +3,8 @@ import { providers, serverKeyFor } from './providers/index.js';
 import { topicTerms, scoreItem } from './rank.js';
 import { words, isContentWord } from './text.js';
 
-export const MIN_PER_TYPE = 5;
+// The user picks how many images and how many videos each topic gets.
+export const MIN_PER_TYPE = 1;
 export const MAX_PER_TYPE = 30;
 const TYPES = ['image', 'video'];
 
@@ -116,7 +117,7 @@ export class SearchRun {
     const pools = { image: new Map(), video: new Map() };
     const fresh = (type) => [...pools[type].values()].filter((i) => !this.usedIds.has(i.id)).length;
     // Gather some surplus so ranking has real choices, not just the first hits.
-    const wanted = Math.ceil(this.perTopic * 1.5);
+    const wanted = Math.max(6, Math.ceil(this.perTopic * 1.5));
     const queries = [...topic.queries];
     for (const b of broaderQueries(topic)) {
       if (!queries.some((q) => q.toLowerCase() === b.toLowerCase())) queries.push(b);
@@ -151,10 +152,10 @@ export class SearchRun {
     const pick = (type) => {
       const ranked = [...pools[type].values()].sort((a, b) => b.score - a.score);
       const chosen = ranked.filter((i) => !this.usedIds.has(i.id)).slice(0, this.perTopic);
-      // Only reuse a file another topic already took if that is the only way to reach the minimum.
-      if (chosen.length < MIN_PER_TYPE) {
+      // Only reuse a file another topic already took if that is the only way to reach the number asked for.
+      if (chosen.length < this.perTopic) {
         for (const i of ranked) {
-          if (chosen.length >= MIN_PER_TYPE) break;
+          if (chosen.length >= this.perTopic) break;
           if (!chosen.includes(i)) chosen.push({ ...i, sharedWithOtherTopic: true });
         }
       }
@@ -169,10 +170,8 @@ export class SearchRun {
       const label = type === 'image' ? 'images' : 'videos';
       if (!this.active.some((a) => a.provider.supports.includes(type))) {
         notes.push(`None of the connected platforms provide ${label}. Add a key for a platform that provides ${label} (for example Pexels${type === 'video' ? ' or Pixabay Videos' : ' or Pixabay Images'}).`);
-      } else if (list.length < MIN_PER_TYPE) {
-        notes.push(`Only ${list.length} ${label} could be found for this topic across the connected platforms.`);
       } else if (list.length < this.perTopic) {
-        notes.push(`${list.length} of the ${this.perTopic} requested ${label} were found.`);
+        notes.push(`Only ${list.length} of the ${this.perTopic} requested ${label} could be found for this topic across the connected platforms.`);
       }
     }
 
@@ -182,7 +181,7 @@ export class SearchRun {
       videos,
       queriesTried: tried,
       notes,
-      short: { images: images.length < MIN_PER_TYPE, videos: videos.length < MIN_PER_TYPE },
+      short: { images: images.length < this.perTopic, videos: videos.length < this.perTopic },
     };
   }
 }
