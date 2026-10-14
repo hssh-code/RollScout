@@ -139,3 +139,26 @@ test('parsing helpers', () => {
   assert.equal(safeZipPath('../../etc/passwd'), 'etc/passwd');
   assert.equal(safeZipPath('01 coffee/images/a b.jpg'), '01-coffee/images/a-b.jpg');
 });
+
+test('suggest endpoint returns phrases for a typed-in topic', async () => {
+  const data = await (await post('/api/suggest', { title: 'Coffee farms', text: 'Coffee farms in Brazil grow beans on hills. Coffee farms hire pickers.' })).json();
+  assert.equal(data.queries[0], 'Coffee farms');
+  assert.ok(data.queries.length >= 4);
+});
+
+test('a topic with a title but no search phrases is searched by its title', async () => {
+  const calls = mockFetch([
+    [(u) => u.pathname === '/v1/search', (u) => json(pexelsPhotos(u.searchParams.get('query'), 10))],
+    [(u) => u.pathname === '/videos/search', (u) => json(pexelsVideos(u.searchParams.get('query'), 10))],
+  ]);
+  const res = await post('/api/search', {
+    topics: [{ id: 'm1', title: 'Killer whale', queries: [] }],
+    platforms: { pexels: { enabled: true, key: 'k' } },
+    options: { perTopic: 5 },
+  });
+  const lines = (await res.text()).trim().split('\n').map((l) => JSON.parse(l));
+  const topic = lines.find((l) => l.type === 'topic');
+  assert.ok(topic, 'the topic was searched');
+  assert.equal(topic.result.images.length, 5);
+  assert.equal(calls[0].url.searchParams.get('query'), 'Killer whale');
+});

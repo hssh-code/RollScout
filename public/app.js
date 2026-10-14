@@ -247,7 +247,8 @@ function connectedPlatforms() {
 function initSettings(saved) {
   const s = saved.settings || {};
   if (s.perTopic) $('#per-topic').value = s.perTopic;
-  if (s.maxTopics) $('#max-topics').value = s.maxTopics;
+  // 8 was the old default; it merged list-style scripts with many subjects, so it is not carried over.
+  if (s.maxTopics && s.maxTopics !== '8') $('#max-topics').value = s.maxTopics;
   if (s.imageQuality) $('#image-quality').value = s.imageQuality;
   if (s.videoQuality) $('#video-quality').value = s.videoQuality;
   if (s.method) {
@@ -292,7 +293,7 @@ async function findTopics() {
   const method = document.querySelector('input[name=method]:checked').value;
   status.textContent = method === 'ai' ? 'Asking Claude to map out the script...' : 'Reading the script...';
   try {
-    const maxTopics = Number($('#max-topics').value) || 8;
+    const maxTopics = Number($('#max-topics').value) || 20;
     const data = local
       ? local.topics(text, maxTopics)
       : await api('api/topics', { text, method, anthropicKey: state.anthropicKey, maxTopics });
@@ -311,6 +312,55 @@ async function findTopics() {
   setBusy(btn, false);
 }
 
+const MAX_PHRASES = 6;
+
+function newTopic(title, given = []) {
+  // `auto`: search phrases are filled in automatically until the user edits them.
+  return { id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, title, queries: [...given], given, keywords: [], auto: true };
+}
+
+// One topic per line. Spreadsheet rows are tab-separated: the first cell is the title,
+// any further cells are extra search phrases. List bullets and numbering are removed.
+function parsePastedTopics(text) {
+  return String(text).split(/\r?\n/).map((line) => {
+    const cells = line.split('\t').map((c) => c.replace(/^\s*(?:[-*•▪◦]|\d+[.)])\s+/, '').replace(/^"|"$/g, '').trim()).filter(Boolean);
+    return cells.length ? { title: cells[0], phrases: cells.slice(1) } : null;
+  }).filter(Boolean);
+}
+
+function addPastedTopics(index, rows) {
+  const created = rows.map((r) => newTopic(r.title, r.phrases));
+  // The first line replaces the topic being edited when it is still empty.
+  const replace = !state.topics[index].title.trim() && !state.topics[index].queries.length;
+  state.topics.splice(index, replace ? 1 : 0, ...(replace ? created : []));
+  if (!replace) state.topics.splice(index + 1, 0, ...created);
+  renderTopics();
+  created.forEach((t) => autoFill(t));
+}
+
+async function autoFill(topic) {
+  const title = topic.title.trim();
+  if (!topic.auto || !title) return;
+  topic.filling = true;
+  topic.draw?.();
+  try {
+    const text = $('#script-text').value;
+    const data = local ? local.suggest(title, text) : await api('api/suggest', { title, text });
+    // Skip if the user changed the title or the phrases meanwhile.
+    if (!topic.auto || topic.title.trim() !== title) return;
+    const merged = [];
+    for (const q of [...(topic.given || []), ...data.queries]) {
+      if (!merged.some((m) => m.toLowerCase() === q.toLowerCase())) merged.push(q);
+    }
+    topic.queries = merged.slice(0, Math.max(MAX_PHRASES, (topic.given || []).length));
+  } catch {
+    if (topic.auto && !topic.queries.length) topic.queries = [title];
+  } finally {
+    topic.filling = false;
+    topic.draw?.();
+  }
+}
+
 function renderTopics() {
   const list = $('#topic-list');
   list.textContent = '';
@@ -318,9 +368,28 @@ function renderTopics() {
     list.append(el('p', { class: 'empty', text: 'No topics yet. Add one below.' }));
   }
   state.topics.forEach((topic, i) => {
-    const title = el('input', { type: 'text', class: 'topic-title', 'aria-label': 'Topic title' });
+    const title = el('input', {
+      type: 'text',
+      class: 'topic-title',
+      'aria-label': 'Topic title',
+      placeholder: 'Type a topic, or paste a list (one per line)',
+    });
     title.value = topic.title;
     title.addEventListener('input', () => { topic.title = title.value; });
+    title.addEventListener('change', () => autoFill(topic));
+    title.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        title.blur();
+      }
+    });
+    // Pasting several lines adds one topic per line.
+    title.addEventListener('paste', (e) => {
+      const rows = parsePastedTopics(e.clipboardData?.getData('text') || '');
+      if (rows.length < 2) return;
+      e.preventDefault();
+      addPastedTopics(i, rows);
+    });
 
     const chips = el('div', { class: 'chips' });
     const drawChips = () => {
@@ -332,6 +401,7 @@ function renderTopics() {
           'aria-label': `Remove ${q}`,
           onclick: () => {
             topic.queries.splice(qi, 1);
+            topic.auto = false;
             drawChips();
           },
         }, '×')));
@@ -341,12 +411,15 @@ function renderTopics() {
         if (e.key === 'Enter' && add.value.trim()) {
           e.preventDefault();
           topic.queries.push(add.value.trim());
+          topic.auto = false;
           drawChips();
           chips.querySelector('input').focus();
         }
       });
+      if (topic.filling) chips.append(el('span', { class: 'muted small', text: 'Finding search phrases...' }));
       chips.append(add);
     };
+    topic.draw = drawChips;
     drawChips();
 
     list.append(el('div', { class: 'topic-edit' },
@@ -676,10 +749,14 @@ async function streamSearch(body, handle) {
 
 async function searchMedia() {
   const topics = state.topics
-    .map((t) => ({ ...t, title: t.title.trim() || 'Untitled topic', queries: t.queries.filter((q) => q.trim()) }))
-    .filter((t) => t.queries.length);
+    .filter((t) => t.title.trim() || t.queries.some((q) => q.trim()))
+    .map(({ draw, ...t }) => {
+      const queries = t.queries.filter((q) => q.trim());
+      // A topic without search phrases is searched by its title.
+      return { ...t, title: t.title.trim() || 'Untitled topic', queries: queries.length ? queries : [t.title.trim()] };
+    });
   if (!topics.length) {
-    alert('Add at least one topic with a search phrase.');
+    alert('Add at least one topic.');
     return;
   }
   const platforms = connectedPlatforms();
@@ -810,10 +887,10 @@ async function boot() {
 
   $('#find-topics').addEventListener('click', findTopics);
   $('#add-topic').addEventListener('click', () => {
-    state.topics.push({ id: `custom-${Date.now()}`, title: 'New topic', queries: [], keywords: [] });
+    state.topics.push(newTopic(''));
     renderTopics();
     const inputs = document.querySelectorAll('.topic-edit .topic-title');
-    inputs[inputs.length - 1]?.select();
+    inputs[inputs.length - 1]?.focus();
   });
   $('#search-media').addEventListener('click', searchMedia);
   $('#select-all').addEventListener('click', () => {

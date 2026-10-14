@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { detectTopics, extractCues, headingText } from '../server/topics.js';
+import { readFileSync } from 'node:fs';
+import {
+  detectTopics, extractCues, headingText, labelSentences, splitParagraphs, suggestQueries,
+} from '../server/topics.js';
+
+const WHALES = readFileSync(new URL('./fixtures/whales.txt', import.meta.url), 'utf8');
 
 const HEADED = `# Intro
 Welcome back. Today we explore the hidden world of coral reefs and the ocean creatures that live there.
@@ -69,4 +74,48 @@ test('extracts visual cues in brackets and on their own line', () => {
 
 test('handles empty input', () => {
   assert.deepEqual(detectTopics('   '), []);
+});
+
+test('list-style script: each named subject becomes its own topic', () => {
+  const titles = detectTopics(WHALES).map((t) => t.title);
+  const whales = ['Blue whale', 'Humpback whale', 'Orca', 'Gray whale', 'Sperm whale', 'Narwhal',
+    'Beluga', 'Fin whale', 'North Atlantic right whale', 'Bowhead whale'];
+  for (const w of whales) assert.ok(titles.includes(w), `missing topic ${w}`);
+  // Intro and outro paragraphs are kept, but no whale is merged into another.
+  assert.equal(titles.length, whales.length + 2);
+});
+
+test('the subject name is the first search phrase', () => {
+  const blue = detectTopics(WHALES).find((t) => t.title === 'Blue whale');
+  assert.equal(blue.queries[0], 'Blue whale');
+});
+
+test('one paragraph per line counts as separate paragraphs', () => {
+  const text = 'Coffee grows on steep hillsides in Colombia, where farmers pick ripe cherries by hand every season.\n'
+    + 'Espresso machines force hot water through finely ground coffee at high pressure in busy cafes.\n'
+    + 'Tea plantations in Assam stretch across rolling green hills under heavy monsoon rains each summer.';
+  assert.equal(splitParagraphs(text).length, 3);
+});
+
+test('recognises short sentences that only name the subject', () => {
+  assert.deepEqual(labelSentences('Daily, it eats krill. Blue whale. It feeds in every ocean.'), ['Blue whale']);
+  assert.deepEqual(labelSentences('Those patches are white. North Atlantic right whale. It lives off the coast.'), ['North Atlantic right whale']);
+  for (const not of ['Not just clicks.', 'The krill stay in.', 'Thanks for watching.', 'How?', 'Clicks built from parts.', '5 whales down.']) {
+    assert.deepEqual(labelSentences(not), [], not);
+  }
+});
+
+test('suggests search phrases for a typed-in topic, using the script', () => {
+  const blue = suggestQueries('Blue whale', WHALES);
+  assert.equal(blue[0], 'Blue whale');
+  assert.equal(blue.length, 6);
+  assert.ok(blue.some((q) => /throat|krill|tongue|baleen/i.test(q)), blue.join(', '));
+});
+
+test('suggests phrases even when the script does not mention the topic', () => {
+  const q = suggestQueries('Killer whale', '');
+  assert.equal(q[0], 'Killer whale');
+  assert.equal(q.length, 6);
+  assert.equal(new Set(q.map((x) => x.toLowerCase())).size, 6, 'no duplicates');
+  assert.deepEqual(suggestQueries('   ', WHALES), []);
 });

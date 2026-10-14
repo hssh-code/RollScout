@@ -1,8 +1,11 @@
 // Splits a script into topics and derives stock-media search queries for each one.
 // This is the built-in, offline method. aiTopics.js offers an optional Claude-powered one.
 import {
-  words, stem, isContentWord, termFreq, cosine, titleCase, wordCount, ABSTRACT, VERBS, STOPWORDS,
+  words, stem, isContentWord, termFreq, cosine, titleCase, wordCount, contentStems, ABSTRACT, VERBS, STOPWORDS,
 } from './text.js';
+
+export const DEFAULT_MAX_TOPICS = 20;
+export const MAX_TOPICS = 30;
 
 const CUE_RE = /\[(?:b-?roll|visuals?|shot|footage|images?|img|graphic|on[- ]screen|show|cut to)\s*[:\-–]\s*([^\]]+)\]/gi;
 const CUE_LINE_RE = /^\s*\(?(?:b-?roll|visuals?|shot|footage|on[- ]screen|cut to)\s*[:\-–]\s*(.+?)\)?\s*$/i;
@@ -122,6 +125,7 @@ function mergeBlocks(blocks, { target, minWords, simThreshold = 1 }) {
     const body = `${a.body}\n\n${b.body}`;
     list.splice(i, 2, {
       title: mergeTitles(a.title, b.title),
+      named: Boolean(a.named && b.named),
       rawText: `${a.rawText}\n\n${b.rawText}`,
       body,
       tf: termFreq(body),
@@ -214,6 +218,9 @@ function extractKeywords(body, idf, max = 6) {
     if (verbCount === stems.length) score *= 0.2;
     else if (verbCount) score *= 0.45;
     if (/ing$/.test(surfaceWords[surfaceWords.length - 1]) && c.len === 1) score *= 0.7;
+    // "robert pitman photographed", "team analyzed": a trailing past-tense verb makes a poor search.
+    const lastWord = surfaceWords[surfaceWords.length - 1];
+    if (c.proper === 0 && lastWord.length > 4 && /[^e]ed$/.test(lastWord)) score *= 0.35;
     const form = [...c.forms.entries()].sort((a, b) => b[1] - a[1])[0][0];
     return { key: c.key, stems, score, phrase: c.proper > 0 ? form : form.toLowerCase() };
   }).sort((a, b) => b.score - a.score);
@@ -248,8 +255,7 @@ function firstSentence(text, max = 200) {
   return out.length > max ? `${out.slice(0, max - 1).trim()}…` : out;
 }
 
-function uniqueQueries(list, max = 6) {
-  const seen = [];
+function uniqueQueries(list, max = 6, seen = []) {
   const out = [];
   for (const q of list) {
     const clean = String(q || '').replace(/\s+/g, ' ').trim();
@@ -265,10 +271,70 @@ function uniqueQueries(list, max = 6) {
   return out;
 }
 
-export function detectTopics(text, { maxTopics = 8 } = {}) {
+// Paragraphs are separated by blank lines, or by single line breaks when the script is
+// written one long paragraph per line (common when copying from docs or teleprompters).
+export function splitParagraphs(text) {
+  const byBlank = String(text).split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  const lines = String(text).split('\n').map((l) => l.trim()).filter(Boolean);
+  const longLines = lines.filter((l) => wordCount(l) >= 15).length;
+  if (lines.length > byBlank.length && longLines >= Math.max(2, lines.length * 0.6)) return lines;
+  return byBlank;
+}
+
+// A "label" is a short sentence that just names the subject, the way list-style scripts
+// introduce each item: "Blue whale." "Orca." "North Atlantic right whale."
+export function labelSentences(paragraph) {
+  return String(paragraph).split(/(?<=[.!?])\s+/).map((x) => x.trim()).filter((sentence) => {
+    if (!/^[A-Z][^.!?]*\.$/.test(sentence)) return false;
+    const tokens = sentence.slice(0, -1).split(/\s+/);
+    if (tokens.length > 4 || !tokens.every((t) => /^[A-Za-z][A-Za-z'’-]*$/.test(t))) return false;
+    const lower = tokens.map((t) => t.toLowerCase().replace(/[’']s$/, ''));
+    if (STOPWORDS.has(lower[0])) return false;
+    if (lower.filter((t) => STOPWORDS.has(t)).length > 1) return false;
+    if (lower.some((t) => VERBS.has(t) || ABSTRACT.has(t) || /(?:ly|ing|ed)$/.test(t))) return false;
+    return true;
+  }).map((x) => x.slice(0, -1));
+}
+
+// Picks one label per paragraph when the script consistently uses them, else returns null.
+function detectLabels(blocks) {
+  const cands = blocks.map((b) => labelSentences(b.body));
+  const labelled = cands.filter((c) => c.length).length;
+  if (labelled < 3 || labelled < blocks.length * 0.4) return null;
+  // Labels that share a head word with other paragraphs' labels ("... whale") are the strongest.
+  const heads = new Map();
+  for (const c of cands) {
+    for (const h of new Set(c.map((l) => stem(l.split(/\s+/).pop())))) heads.set(h, (heads.get(h) || 0) + 1);
+  }
+  return cands.map((c) => {
+    if (!c.length) return null;
+    return [...c].sort((a, b) => (heads.get(stem(b.split(/\s+/).pop())) || 0) - (heads.get(stem(a.split(/\s+/).pop())) || 0))[0];
+  });
+}
+
+// Builds topics from labelled paragraphs. Unlabelled paragraphs between two labelled ones
+// continue the previous topic; an unlabelled opening or closing paragraph stays on its own.
+function labelledBlocks(blocks, labels) {
+  const first = labels.findIndex(Boolean);
+  let last = -1;
+  labels.forEach((l, i) => { if (l) last = i; });
+  const out = [];
+  blocks.forEach((b, i) => {
+    if (labels[i]) out.push({ ...b, title: labels[i], named: true });
+    else if (i < first || i > last) out.push({ ...b, title: null });
+    else {
+      const prev = out[out.length - 1];
+      prev.body = `${prev.body}\n\n${b.body}`;
+      prev.rawText = `${prev.rawText}\n\n${b.rawText}`;
+    }
+  });
+  return out;
+}
+
+export function detectTopics(text, { maxTopics = DEFAULT_MAX_TOPICS } = {}) {
   const source = String(text || '').trim();
   if (!source) return [];
-  maxTopics = Math.max(1, Math.min(20, Number(maxTopics) || 8));
+  maxTopics = Math.max(1, Math.min(MAX_TOPICS, Number(maxTopics) || DEFAULT_MAX_TOPICS));
 
   const { sections, headed } = splitIntoSections(source);
   let blocks;
@@ -290,15 +356,20 @@ export function detectTopics(text, { maxTopics = 8 } = {}) {
     blocks = mergeBlocks(blocks, { target: maxTopics, minWords: 0 });
   } else {
     const body = cleanBody(source);
-    let paragraphs = body.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
-    const raws = source.split(/\n\s*\n/).filter((r) => r.trim());
-    const chunked = paragraphs.length < 3 && wordCount(body) > 150;
-    if (chunked) paragraphs = sentenceChunks(body);
-    blocks = paragraphs.map((p, i) => ({ title: null, rawText: !chunked && raws.length === paragraphs.length ? raws[i] : p, body: p }));
-    // Writers' own paragraphs are trusted more than arbitrary sentence chunks.
-    blocks = chunked
-      ? mergeBlocks(blocks, { target: Math.max(1, Math.min(maxTopics, Math.round(wordCount(body) / 120))), minWords: 25, simThreshold: 0.2 })
-      : mergeBlocks(blocks, { target: maxTopics, minWords: 12, simThreshold: 0.3 });
+    blocks = splitParagraphs(source)
+      .map((raw) => ({ title: null, rawText: raw, body: cleanBody(raw) }))
+      .filter((b) => b.body);
+    const labels = blocks.length >= 3 ? detectLabels(blocks) : null;
+    if (labels) {
+      // The script names each subject, so each named subject is a topic.
+      blocks = mergeBlocks(labelledBlocks(blocks, labels), { target: maxTopics, minWords: 0 });
+    } else if (blocks.length < 3 && wordCount(body) > 150) {
+      blocks = sentenceChunks(body).map((p) => ({ title: null, rawText: p, body: p }));
+      blocks = mergeBlocks(blocks, { target: Math.max(1, Math.min(maxTopics, Math.round(wordCount(body) / 120))), minWords: 25, simThreshold: 0.2 });
+    } else {
+      // Writers' own paragraphs are trusted more than arbitrary sentence chunks.
+      blocks = mergeBlocks(blocks, { target: maxTopics, minWords: 12, simThreshold: 0.3 });
+    }
   }
 
   // Inverse document frequency across topics, so words shared by every topic matter less.
@@ -320,7 +391,17 @@ export function detectTopics(text, { maxTopics = 8 } = {}) {
     const titleQuery = meaningful && b.title.split(/\s+/).length <= 5 ? b.title : null;
     // Cues are checked separately so a long cue does not hide the shorter keyword inside it.
     const cueQueries = uniqueQueries(cues, 3);
-    const queries = [...cueQueries, ...uniqueQueries([titleQuery, ...keywords.slice(0, 5)], 6 - cueQueries.length)];
+    let queries;
+    if (b.named) {
+      // A named subject ("Blue whale"): its name, the best few details from the script, and
+      // shots of the subject itself, so most searches stay on the subject.
+      const seen = [[...contentStems(b.title)]];
+      const details = uniqueQueries(keywords, 3, seen);
+      const shots = uniqueQueries(SHOT_TYPES.map((t) => `${b.title} ${t}`), 2, seen);
+      queries = uniqueQueries([...cueQueries, b.title, ...details, ...shots], 6);
+    } else {
+      queries = [...cueQueries, ...uniqueQueries([titleQuery, ...keywords.slice(0, 5)], 6 - cueQueries.length)];
+    }
     if (!queries.length) queries.push(words(b.body).filter(isContentWord).slice(0, 3).join(' ') || title);
     return {
       id: `t${i + 1}`,
@@ -334,4 +415,51 @@ export function detectTopics(text, { maxTopics = 8 } = {}) {
   });
 
   return topics.filter((t) => t.queries.length);
+}
+
+// Generic shot types that work for almost any subject on stock sites.
+const SHOT_TYPES = ['close up', 'aerial view', 'slow motion', 'wide shot', 'background'];
+
+// Search phrases for a topic the user typed in: the title itself, then what the script
+// says about that subject, then common shot types, then the broader subject.
+export function suggestQueries(title, scriptText = '', max = 6) {
+  const cleanTitle = String(title || '').replace(/\s+/g, ' ').trim();
+  if (!cleanTitle) return [];
+  const titleStems = [...contentStems(cleanTitle)];
+  const head = titleStems[titleStems.length - 1];
+  const context = [];
+  const text = String(scriptText || '').trim();
+  if (text && titleStems.length) {
+    const blocks = splitParagraphs(text).map((raw) => cleanBody(raw)).filter(Boolean);
+    const mentions = (body) => words(body).filter((w) => stem(w) === head).length;
+    const coversTitle = (body) => {
+      const stems = contentStems(body);
+      return titleStems.every((x) => stems.has(x));
+    };
+    // A paragraph is about this subject if it names it in a label ("Blue whale.") or mentions it repeatedly.
+    let related = blocks.filter((b) => coversTitle(b)
+      && (labelSentences(b).some((l) => [...contentStems(l)].includes(head)) || mentions(b) >= 2));
+    if (!related.length) {
+      // Otherwise use only the sentences that mention it.
+      related = blocks.flatMap((b) => b.split(/(?<=[.!?])\s+/)).filter(coversTitle);
+    }
+    if (related.length) {
+      const body = related.join('\n\n');
+      const whole = termFreq(text);
+      const local = termFreq(body);
+      // Words used all over the script say less about this subject than words used mostly here.
+      const idf = new Map([...local].map(([k, v]) => [k, 0.5 + v / (whole.get(k) || v)]));
+      context.push(...extractKeywords(body, idf, max));
+    }
+  }
+  const novel = (q) => [...contentStems(q)].some((x) => !titleStems.includes(x));
+  const seen = [titleStems];
+  const fromScript = uniqueQueries(context.filter(novel), Math.max(0, max - 2), seen);
+  const shots = uniqueQueries(SHOT_TYPES.map((t) => `${cleanTitle} ${t}`), max - 1 - fromScript.length, seen);
+  const titleWords = words(cleanTitle).filter(isContentWord);
+  const broader = titleWords.length > 1 ? [titleWords[titleWords.length - 1]] : [];
+  const out = [cleanTitle, ...fromScript, ...shots];
+  // The broader subject ("whale") goes last as a fallback, when there is room.
+  for (const b of broader) if (out.length < max && !out.some((q) => q.toLowerCase() === b.toLowerCase())) out.push(b);
+  return out.slice(0, max);
 }

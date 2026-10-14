@@ -4,14 +4,13 @@ import express from 'express';
 import multer from 'multer';
 import { publicProviderInfo, providerById, serverKeyFor, isAllowedTrackUrl } from './providers/index.js';
 import { extractText, SUPPORTED_EXTENSIONS } from './scriptParser.js';
-import { detectTopics } from './topics.js';
+import { detectTopics, suggestQueries, DEFAULT_MAX_TOPICS, MAX_TOPICS } from './topics.js';
 import { aiDetectTopics } from './aiTopics.js';
 import { resolveProviders, searchAllTopics, MIN_PER_TYPE, MAX_PER_TYPE } from './search.js';
 import { handleDownload, handleZip, trackUnsplash } from './download.js';
 import { wordCount } from './text.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const MAX_TOPICS = 20;
 
 function cleanTopics(list) {
   if (!Array.isArray(list)) return [];
@@ -20,7 +19,10 @@ function cleanTopics(list) {
     title: String(t.title || `Topic ${i + 1}`).slice(0, 120),
     keywords: (Array.isArray(t.keywords) ? t.keywords : []).map((k) => String(k).slice(0, 80)).slice(0, 12),
     queries: (Array.isArray(t.queries) ? t.queries : []).map((q) => String(q).trim().slice(0, 100)).filter(Boolean).slice(0, 10),
-  })).filter((t) => t.queries.length);
+  }))
+    // A topic with a title but no phrases is searched by its title.
+    .map((t) => (t.queries.length || !String(t.title).trim() ? t : { ...t, queries: [t.title.trim()] }))
+    .filter((t) => t.queries.length);
 }
 
 export function createApp() {
@@ -64,7 +66,7 @@ export function createApp() {
   app.post('/api/topics', async (req, res) => {
     const text = String(req.body?.text || '');
     if (!text.trim()) return res.status(400).json({ error: 'The script is empty.' });
-    const maxTopics = Math.max(1, Math.min(MAX_TOPICS, Number(req.body?.maxTopics) || 8));
+    const maxTopics = Math.max(1, Math.min(MAX_TOPICS, Number(req.body?.maxTopics) || DEFAULT_MAX_TOPICS));
     if (req.body?.method === 'ai') {
       try {
         const topics = await aiDetectTopics(text, { apiKey: req.body.anthropicKey, maxTopics });
@@ -79,6 +81,12 @@ export function createApp() {
       }
     }
     res.json({ topics: detectTopics(text, { maxTopics }), method: 'auto' });
+  });
+
+  // Search phrases for a topic typed in by hand.
+  app.post('/api/suggest', (req, res) => {
+    const title = String(req.body?.title || '').slice(0, 120);
+    res.json({ queries: suggestQueries(title, String(req.body?.text || '')) });
   });
 
   app.post('/api/verify', async (req, res) => {

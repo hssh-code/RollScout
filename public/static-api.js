@@ -1,12 +1,11 @@
 // Web version (GitHub Pages): everything the server normally does, done in the browser.
 // Platform requests go straight from the browser to each platform with the user's own keys.
-import { detectTopics } from './server/topics.js';
+import { detectTopics, suggestQueries, DEFAULT_MAX_TOPICS, MAX_TOPICS } from './server/topics.js';
 import { providerById, publicProviderInfo } from './server/providers/index.js';
 import { resolveProviders, searchAllTopics, MIN_PER_TYPE, MAX_PER_TYPE } from './server/search.js';
 import { stripSubtitles, stripRtf, SUPPORTED_EXTENSIONS } from './server/textFormats.js';
 import { wordCount } from './server/text.js';
 
-const MAX_TOPICS = 20;
 
 export function config() {
   return {
@@ -61,7 +60,11 @@ export async function parseScriptFile(file) {
 }
 
 export function topics(text, maxTopics) {
-  return { topics: detectTopics(text, { maxTopics: Math.min(MAX_TOPICS, maxTopics || 8) }), method: 'auto' };
+  return { topics: detectTopics(text, { maxTopics: Math.min(MAX_TOPICS, maxTopics || DEFAULT_MAX_TOPICS) }), method: 'auto' };
+}
+
+export function suggest(title, text) {
+  return { queries: suggestQueries(title, text) };
 }
 
 export async function verify(providerId, key) {

@@ -27,6 +27,10 @@ Adding another platform means writing one connector in `server/providers/` (see 
 - **Built-in (default, free, offline).** Uses headings (`# Heading`, `SCENE 1`, `[INTRO]`, `INT. KITCHEN - DAY`, short ALL CAPS lines), then paragraphs, and groups related paragraphs together. It extracts names and noun phrases ("Great Barrier Reef", "green sea turtles") as search phrases.
 - **AI (optional).** Choose "AI (Claude)" under *Search settings* and add an Anthropic API key to get smarter topic splits and camera-friendly search phrases. If it fails, RollScout falls back to the built-in detector automatically.
 
+List-style scripts that name each subject in a short sentence ("Blue whale." "Orca." "Narwhal.") get one topic per named subject, with the name as the first search phrase. Paragraphs can be separated by blank lines or by single line breaks.
+
+**Adding topics by hand:** click **+ Add topic** and type a title, or paste a list into any topic title (one topic per line, or a column copied from a spreadsheet, where extra cells become search phrases). Search phrases fill in automatically from what the script says about that subject. A topic without search phrases is searched by its title.
+
 **Tip:** visual cues in the script such as `[B-roll: aerial view of a city at night]` or a line starting `VISUAL:` are used as the first search phrase for that topic.
 
 ## Get the app
