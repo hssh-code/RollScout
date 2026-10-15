@@ -1,4 +1,4 @@
-import { fetchJson, extFromUrl, slugWords, pickRendition } from '../http.js';
+import { fetchJson, extFromUrl, slugWords, pickRendition, fallbackRenditions } from '../http.js';
 
 const NAME = 'Pexels';
 
@@ -33,6 +33,11 @@ export default {
         previewUrl: p.src?.medium || p.src?.small,
         displayUrl: p.src?.large || p.src?.medium,
         downloadUrl,
+        renditions: fallbackRenditions({ url: downloadUrl, width: p.width, height: p.height }, [
+          { url: `${original}?auto=compress&cs=tinysrgb&w=1920`, width: 1920 },
+          { url: p.src?.large2x, width: 1880 },
+          { url: p.src?.large, width: 940 },
+        ]),
         ext: extFromUrl(original, 'jpg'),
         pageUrl: p.url,
         author: p.photographer,
@@ -50,7 +55,7 @@ export default {
     return (data.videos || []).map((v, i) => {
       const files = (v.video_files || [])
         .filter((f) => (f.file_type || '').startsWith('video/'))
-        .map((f) => ({ url: f.link, width: f.width, height: f.height }));
+        .map((f) => ({ url: f.link, width: f.width, height: f.height, size: f.size || undefined }));
       const best = pickRendition(files, videoQuality);
       const small = pickRendition(files, 'sd');
       if (!best) return null;
@@ -68,6 +73,8 @@ export default {
         previewUrl: v.image,
         displayUrl: small?.url || best.url,
         downloadUrl: best.url,
+        size: best.size,
+        renditions: fallbackRenditions(best, files),
         ext: extFromUrl(best.url, 'mp4'),
         pageUrl: v.url,
         author: v.user?.name,

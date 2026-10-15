@@ -42,6 +42,11 @@ export default {
           previewUrl: r.urls?.small,
           displayUrl: r.urls?.regular,
           downloadUrl,
+          renditions: [
+            { url: downloadUrl, width: imageQuality === 'original' ? r.width : 1920 },
+            { url: r.urls?.regular, width: 1080 },
+            { url: r.urls?.small, width: 400 },
+          ].filter((x) => x.url),
           ext: 'jpg',
           pageUrl: r.links?.html,
           author: r.user?.name,

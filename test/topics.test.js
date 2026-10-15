@@ -119,3 +119,15 @@ test('suggests phrases even when the script does not mention the topic', () => {
   assert.equal(new Set(q.map((x) => x.toLowerCase())).size, 6, 'no duplicates');
   assert.deepEqual(suggestQueries('   ', WHALES), []);
 });
+
+test('breaks a detailed topic title into shorter search phrases', () => {
+  const q = suggestQueries('Bowhead breaking through sea ice', '');
+  assert.equal(q[0], 'Bowhead breaking through sea ice');
+  for (const part of ['Bowhead sea ice', 'breaking sea ice', 'sea ice', 'Bowhead']) {
+    assert.ok(q.includes(part), `missing "${part}" in ${q.join(' | ')}`);
+  }
+  // With the script, the shortened name is expanded to the full one it uses.
+  assert.ok(suggestQueries('Bowhead breaking through sea ice', WHALES).includes('Bowhead whale'));
+  const humpback = suggestQueries('Humpback whale rescuing a seal from orcas', '');
+  assert.ok(humpback.includes('Humpback whale seal') && humpback.includes('Humpback whale'), humpback.join(' | '));
+});

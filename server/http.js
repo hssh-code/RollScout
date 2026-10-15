@@ -67,6 +67,15 @@ export function slugWords(pageUrl = '') {
   }
 }
 
+// Versions of one file to fall back on when a size limit is set: the chosen one first,
+// then smaller ones (largest first). Each is { url, width, height, size? } with size in bytes.
+export function fallbackRenditions(chosen, all) {
+  const smaller = all
+    .filter((f) => f && f.url && f.url !== chosen.url && (!chosen.width || !f.width || f.width < chosen.width))
+    .sort((a, b) => (b.width || 0) - (a.width || 0));
+  return [chosen, ...smaller].map(({ url, width, height, size }) => ({ url, width, height, size }));
+}
+
 // Picks the rendition closest to a target width. `files` items need a `width`.
 export function pickRendition(files, quality = 'hd') {
   const usable = files.filter((f) => f && f.url && f.width);

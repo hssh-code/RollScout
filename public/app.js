@@ -47,6 +47,11 @@ function formatDuration(sec) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
+function formatSize(bytes) {
+  const mb = bytes / (1024 * 1024);
+  return mb >= 10 ? `${Math.round(mb)} MB` : mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
 function countWords(text) {
   return (text.match(/\S+/g) || []).length;
 }
@@ -94,6 +99,7 @@ function save() {
       maxTopics: $('#max-topics').value,
       imageQuality: $('#image-quality').value,
       videoQuality: $('#video-quality').value,
+      maxFileMB: $('#max-file-mb').value,
       method: document.querySelector('input[name=method]:checked').value,
     },
     enabled: Object.fromEntries(Object.entries(state.platforms).map(([id, p]) => [id, p.enabled])),
@@ -251,6 +257,7 @@ function initSettings(saved) {
   if (s.maxTopics && s.maxTopics !== '8') $('#max-topics').value = s.maxTopics;
   if (s.imageQuality) $('#image-quality').value = s.imageQuality;
   if (s.videoQuality) $('#video-quality').value = s.videoQuality;
+  if (s.maxFileMB) $('#max-file-mb').value = s.maxFileMB;
   if (s.method) {
     const radio = document.querySelector(`input[name=method][value="${s.method}"]`);
     if (radio) radio.checked = true;
@@ -274,7 +281,7 @@ function initSettings(saved) {
     state.anthropicKey = e.target.value.trim();
     save();
   });
-  ['#per-topic', '#max-topics', '#image-quality', '#video-quality'].forEach((id) => $(id).addEventListener('change', save));
+  ['#per-topic', '#max-topics', '#image-quality', '#video-quality', '#max-file-mb'].forEach((id) => $(id).addEventListener('change', save));
   $('#remember-keys').addEventListener('change', save);
 }
 
@@ -511,6 +518,7 @@ function openViewer(item) {
     item.author ? `by ${item.author}` : null,
     item.width && item.height ? `${item.width}×${item.height}` : null,
     item.duration ? formatDuration(item.duration) : null,
+    item.size ? `${formatSize(item.size)}${item.smallerVersion ? ' (smaller version, to fit the size limit)' : ''}` : null,
     item.license,
   ].filter(Boolean).join(' · ');
   $('#viewer-meta').textContent = meta;
@@ -565,7 +573,11 @@ function mediaCard(item, key) {
     thumb,
     box,
     el('div', { class: 'media-foot' },
-      el('span', { class: 'credit', title: item.author || '', text: item.author ? `by ${item.author}` : item.providerName }),
+      el('span', {
+        class: 'credit',
+        title: item.author || '',
+        text: [item.author ? `by ${item.author}` : item.providerName, item.size ? formatSize(item.size) : null].filter(Boolean).join(' · '),
+      }),
       dl));
 }
 
@@ -812,6 +824,7 @@ async function searchMedia() {
       perTopic: Number($('#per-topic').value) || 10,
       imageQuality: $('#image-quality').value,
       videoQuality: $('#video-quality').value,
+      maxFileMB: Number($('#max-file-mb').value) || 0,
     },
   };
   try {

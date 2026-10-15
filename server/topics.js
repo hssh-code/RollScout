@@ -420,46 +420,118 @@ export function detectTopics(text, { maxTopics = DEFAULT_MAX_TOPICS } = {}) {
 // Generic shot types that work for almost any subject on stock sites.
 const SHOT_TYPES = ['close up', 'aerial view', 'slow motion', 'wide shot', 'background'];
 
-// Search phrases for a topic the user typed in: the title itself, then what the script
-// says about that subject, then common shot types, then the broader subject.
+// Splits a title into its noun phrases and the action between them:
+// "Bowhead breaking through sea ice" -> parts ["Bowhead", "sea ice"], actions ["breaking"].
+function titleParts(title) {
+  const parts = [];
+  const actions = [];
+  let run = [];
+  const flush = () => {
+    if (run.length) parts.push(run.join(' '));
+    run = [];
+  };
+  for (const w of words(title)) {
+    const lw = w.toLowerCase();
+    const isAction = VERBS.has(lw) || (lw.length > 4 && /(?:ing|ed)$/.test(lw) && !/^[A-Z]/.test(w.slice(0, 1)) ) || (lw.length > 4 && /ing$/.test(lw));
+    if (isAction) {
+      flush();
+      actions.push({ word: lw, before: parts.length });
+    } else if (isContentWord(w)) {
+      run.push(w);
+    } else {
+      flush();
+    }
+  }
+  flush();
+  return { parts, actions };
+}
+
+// Labels in the script ("Bowhead whale.") give the full name of a subject the user shortened.
+function scriptNames(text) {
+  if (!text) return [];
+  return splitParagraphs(text).flatMap((p) => labelSentences(cleanBody(p)));
+}
+
+function expandName(part, names) {
+  const stems = [...contentStems(part)];
+  const match = names.find((n) => {
+    const ns = [...contentStems(n)];
+    return ns.length > stems.length && stems.every((x) => ns.includes(x));
+  });
+  return match || part;
+}
+
+// Search phrases for a topic the user typed in, best first:
+// 1. the title, 2. combinations and key parts of it, 3. what the script says about it,
+// 4. common shot types of the main subject, 5. the broader subject.
 export function suggestQueries(title, scriptText = '', max = 6) {
   const cleanTitle = String(title || '').replace(/\s+/g, ' ').trim();
   if (!cleanTitle) return [];
-  const titleStems = [...contentStems(cleanTitle)];
-  const head = titleStems[titleStems.length - 1];
-  const context = [];
   const text = String(scriptText || '').trim();
-  if (text && titleStems.length) {
+  const names = scriptNames(text);
+  const { parts, actions } = titleParts(cleanTitle);
+  const subject = parts.length ? expandName(parts[0], names) : cleanTitle;
+
+  const fromTitle = [];
+  if (parts.length > 1) {
+    // What the first action is done to ("seal" in "Humpback rescuing a seal from orcas"), else the last part.
+    const firstAction = actions.find((a) => a.before > 0 && parts[a.before]);
+    const object = firstAction ? parts[firstAction.before] : parts[parts.length - 1];
+    fromTitle.push(`${parts[0]} ${object}`); // "Bowhead sea ice"
+    fromTitle.push(subject); // "Bowhead whale" (full name from the script) or "Bowhead"
+    // The action with what it acts on: "breaking sea ice".
+    for (const a of actions) if (a.before > 0 && parts[a.before]) fromTitle.push(`${a.word} ${parts[a.before]}`);
+    fromTitle.push(...parts.slice(1)); // "sea ice"
+    fromTitle.push(parts[0]);
+  } else if (subject !== cleanTitle) {
+    fromTitle.push(subject);
+  }
+
+  const context = [];
+  const titleStems = [...contentStems(cleanTitle)];
+  const subjectStems = [...contentStems(parts[0] || cleanTitle)];
+  const head = subjectStems[subjectStems.length - 1];
+  if (text && head) {
     const blocks = splitParagraphs(text).map((raw) => cleanBody(raw)).filter(Boolean);
     const mentions = (body) => words(body).filter((w) => stem(w) === head).length;
-    const coversTitle = (body) => {
+    const hasSubject = (body) => {
       const stems = contentStems(body);
-      return titleStems.every((x) => stems.has(x));
+      return subjectStems.every((x) => stems.has(x));
     };
-    // A paragraph is about this subject if it names it in a label ("Blue whale.") or mentions it repeatedly.
-    let related = blocks.filter((b) => coversTitle(b)
-      && (labelSentences(b).some((l) => [...contentStems(l)].includes(head)) || mentions(b) >= 2));
-    if (!related.length) {
-      // Otherwise use only the sentences that mention it.
-      related = blocks.flatMap((b) => b.split(/(?<=[.!?])\s+/)).filter(coversTitle);
-    }
+    // A paragraph is about the subject if it names it in a label ("Bowhead whale.") or mentions it repeatedly.
+    let related = blocks.filter((b) => hasSubject(b)
+      && (labelSentences(b).some((l) => subjectStems.every((x) => contentStems(l).has(x))) || mentions(b) >= 2));
+    if (!related.length) related = blocks.flatMap((b) => b.split(/(?<=[.!?])\s+/)).filter(hasSubject);
     if (related.length) {
       const body = related.join('\n\n');
       const whole = termFreq(text);
       const local = termFreq(body);
       // Words used all over the script say less about this subject than words used mostly here.
       const idf = new Map([...local].map(([k, v]) => [k, 0.5 + v / (whole.get(k) || v)]));
-      context.push(...extractKeywords(body, idf, max));
+      context.push(...extractKeywords(body, idf, max).filter((k) => [...contentStems(k)].some((x) => !titleStems.includes(x))));
     }
   }
-  const novel = (q) => [...contentStems(q)].some((x) => !titleStems.includes(x));
-  const seen = [titleStems];
-  const fromScript = uniqueQueries(context.filter(novel), Math.max(0, max - 2), seen);
-  const shots = uniqueQueries(SHOT_TYPES.map((t) => `${cleanTitle} ${t}`), max - 1 - fromScript.length, seen);
-  const titleWords = words(cleanTitle).filter(isContentWord);
+
+  const shots = SHOT_TYPES.map((t) => `${subject} ${t}`);
+  const titleWords = words(subject).filter(isContentWord);
   const broader = titleWords.length > 1 ? [titleWords[titleWords.length - 1]] : [];
-  const out = [cleanTitle, ...fromScript, ...shots];
-  // The broader subject ("whale") goes last as a fallback, when there is room.
-  for (const b of broader) if (out.length < max && !out.some((q) => q.toLowerCase() === b.toLowerCase())) out.push(b);
-  return out.slice(0, max);
+
+  // Exact duplicates are dropped; shorter phrases are kept on purpose (they find more results).
+  const out = [];
+  const seen = new Set();
+  const add = (q) => {
+    const clean = String(q || '').replace(/\s+/g, ' ').trim();
+    const sig = [...contentStems(clean)].sort().join(' ');
+    if (!clean || !sig || seen.has(sig) || out.length >= max) return;
+    seen.add(sig);
+    out.push(clean);
+  };
+  add(cleanTitle);
+  // A detailed title already says what to search for; the script adds detail to short titles.
+  fromTitle.forEach(add);
+  if (parts.length <= 1) context.slice(0, 2).forEach(add);
+  shots.forEach((q) => { if (out.length < max - broader.length) add(q); });
+  broader.forEach(add);
+  shots.forEach(add);
+  return out;
 }

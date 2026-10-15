@@ -7,7 +7,7 @@
 1. **Upload the script.** TXT, Markdown, DOCX, PDF, SRT, VTT, RTF or Fountain, or paste the text.
 2. **Connect platforms.** Paste the API key of each platform you want searched. Only connected platforms are used.
 3. **Review topics.** RollScout splits the script into topics and writes search phrases for each. Rename topics, edit phrases or add your own.
-4. **Get media.** For every topic RollScout searches all connected platforms, ranks the results by relevance and shows the number of images and videos you choose under *Search settings* (10 of each by default, anywhere from 1 to 30). If the connected platforms together have fewer, it says so for that topic.
+4. **Get media.** For every topic RollScout searches all connected platforms, ranks the results by relevance and shows the number of images and videos you choose under *Search settings* (10 of each by default, anywhere from 1 to 30). If the connected platforms together have fewer, it says so for that topic. You can also set a **maximum file size** (in MB): bigger files are skipped, and for videos a smaller version of the same clip is used when one fits. Each card shows the file size when it is known.
 5. **Download.** Single files, one topic, only a topic's images or videos, your selection, or everything. ZIPs are organised as `01-topic-name/images/...` and `01-topic-name/videos/...` and include a `CREDITS.txt` with author, source page and license for every file.
 
 ## Supported platforms
@@ -29,7 +29,7 @@ Adding another platform means writing one connector in `server/providers/` (see 
 
 List-style scripts that name each subject in a short sentence ("Blue whale." "Orca." "Narwhal.") get one topic per named subject, with the name as the first search phrase. Paragraphs can be separated by blank lines or by single line breaks.
 
-**Adding topics by hand:** click **+ Add topic** and type a title, or paste a list into any topic title (one topic per line, or a column copied from a spreadsheet, where extra cells become search phrases). Search phrases fill in automatically from what the script says about that subject. A topic without search phrases is searched by its title.
+**Adding topics by hand:** click **+ Add topic** and type a title, or paste a list into any topic title (one topic per line, or a column copied from a spreadsheet, where extra cells become search phrases). Search phrases fill in automatically: a detailed title such as "Bowhead breaking through sea ice" is broken into shorter searches ("Bowhead sea ice", "breaking sea ice", "sea ice", "Bowhead"), and short titles get details from what the script says about that subject. A topic without search phrases is searched by its title.
 
 **Tip:** visual cues in the script such as `[B-roll: aerial view of a city at night]` or a line starting `VISUAL:` are used as the first search phrase for that topic.
 

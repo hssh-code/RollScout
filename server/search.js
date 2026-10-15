@@ -1,5 +1,5 @@
 // Runs the searches for every topic across the platforms the user connected.
-import { providers, serverKeyFor } from './providers/index.js';
+import { providers, serverKeyFor, isAllowedMediaUrl } from './providers/index.js';
 import { topicTerms, scoreItem } from './rank.js';
 import { words, isContentWord } from './text.js';
 
@@ -11,6 +11,25 @@ const TYPES = ['image', 'video'];
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const CACHE_MAX = 400;
 const cache = new Map();
+// File sizes found with HEAD requests, by URL.
+const sizeCache = new Map();
+const MB = 1024 * 1024;
+
+// Size of a file in bytes from a HEAD request, or null when the platform does not say.
+export async function remoteSize(url) {
+  if (sizeCache.has(url)) return sizeCache.get(url);
+  let size = null;
+  if (isAllowedMediaUrl(url)) {
+    try {
+      const res = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(10000) });
+      const len = Number(res.headers.get('content-length'));
+      if (res.ok && len > 0) size = len;
+    } catch { /* unknown size */ }
+  }
+  if (sizeCache.size > 3000) sizeCache.clear();
+  sizeCache.set(url, size);
+  return size;
+}
 
 // Short fingerprint so cached results are kept per API key without storing the key itself.
 function fingerprint(key) {
@@ -39,6 +58,7 @@ function cacheSet(key, items) {
 
 export function clearSearchCache() {
   cache.clear();
+  sizeCache.clear();
 }
 
 // `requested` looks like { pexels: { enabled: true, key: '...' }, wikimedia: { enabled: true } }.
@@ -66,7 +86,9 @@ function broaderQueries(topic) {
 }
 
 export class SearchRun {
-  constructor(active, { perTopic = 10, imageQuality = 'large', videoQuality = 'hd', onWarning = () => {} } = {}) {
+  constructor(active, {
+    perTopic = 10, imageQuality = 'large', videoQuality = 'hd', maxFileMB = 0, onWarning = () => {},
+  } = {}) {
     this.active = active;
     this.perTopic = Math.max(MIN_PER_TYPE, Math.min(MAX_PER_TYPE, Number(perTopic) || 10));
     this.imageQuality = imageQuality === 'original' ? 'original' : 'large';
@@ -76,6 +98,29 @@ export class SearchRun {
     this.warned = new Set();
     this.usedIds = new Set();
     this.perPage = Math.min(30, Math.max(12, this.perTopic * 2));
+    // Optional size limit per file; 0 means no limit.
+    this.maxBytes = Number(maxFileMB) > 0 ? Number(maxFileMB) * MB : 0;
+  }
+
+  // Returns the item using its largest version under the size limit, or null if none fits.
+  // A file whose size the platform does not report is kept and marked as unchecked.
+  async fitToLimit(item) {
+    const versions = item.renditions?.length ? item.renditions : [{ url: item.downloadUrl, size: item.size }];
+    for (const [i, v] of versions.entries()) {
+      const size = v.size || await remoteSize(v.url);
+      if (size === null && i === 0) return { ...item, sizeUnchecked: true };
+      if (size !== null && size <= this.maxBytes) {
+        return {
+          ...item,
+          downloadUrl: v.url,
+          width: v.width || item.width,
+          height: v.height || item.height,
+          size,
+          ...(i > 0 ? { smallerVersion: true } : {}),
+        };
+      }
+    }
+    return null;
   }
 
   supports(type) {
@@ -149,29 +194,48 @@ export class SearchRun {
       await collect(queries[qi], qi, 2, types);
     }
 
-    const pick = (type) => {
+    const skipped = { image: 0, video: 0 };
+    const pick = async (type) => {
       const ranked = [...pools[type].values()].sort((a, b) => b.score - a.score);
-      const chosen = ranked.filter((i) => !this.usedIds.has(i.id)).slice(0, this.perTopic);
-      // Only reuse a file another topic already took if that is the only way to reach the number asked for.
-      if (chosen.length < this.perTopic) {
-        for (const i of ranked) {
-          if (chosen.length >= this.perTopic) break;
-          if (!chosen.includes(i)) chosen.push({ ...i, sharedWithOtherTopic: true });
+      const fresh = ranked.filter((i) => !this.usedIds.has(i.id));
+      // Files other topics already took are only reused if that is the only way to reach the number asked for.
+      const reused = ranked.filter((i) => this.usedIds.has(i.id)).map((i) => ({ ...i, sharedWithOtherTopic: true }));
+      const chosen = [];
+      if (!this.maxBytes) {
+        chosen.push(...[...fresh, ...reused].slice(0, this.perTopic));
+      } else {
+        // Check sizes a few files at a time, best ranked first, until enough fit the limit.
+        const queue = [...fresh, ...reused];
+        while (chosen.length < this.perTopic && queue.length) {
+          const batch = queue.splice(0, Math.min(8, this.perTopic - chosen.length + 2));
+          const fitted = await Promise.all(batch.map((i) => this.fitToLimit(i)));
+          for (const f of fitted) {
+            if (!f) skipped[type] += 1;
+            else if (chosen.length < this.perTopic && (f.sharedWithOtherTopic || !this.usedIds.has(f.id))) {
+              // Reserve it now: another topic may be checking the same file at the same time.
+              this.usedIds.add(f.id);
+              chosen.push(f);
+            }
+          }
         }
       }
       chosen.forEach((i) => this.usedIds.add(i.id));
       return chosen;
     };
 
-    const images = pick('image');
-    const videos = pick('video');
+    const [images, videos] = await Promise.all([pick('image'), pick('video')]);
     const notes = [];
     for (const [type, list] of [['image', images], ['video', videos]]) {
       const label = type === 'image' ? 'images' : 'videos';
       if (!this.active.some((a) => a.provider.supports.includes(type))) {
         notes.push(`None of the connected platforms provide ${label}. Add a key for a platform that provides ${label} (for example Pexels${type === 'video' ? ' or Pixabay Videos' : ' or Pixabay Images'}).`);
       } else if (list.length < this.perTopic) {
-        notes.push(`Only ${list.length} of the ${this.perTopic} requested ${label} could be found for this topic across the connected platforms.`);
+        notes.push(`Only ${list.length} of the ${this.perTopic} requested ${label} could be found for this topic across the connected platforms`
+          + (skipped[type] ? `; ${skipped[type]} more were over the ${this.maxBytes / MB} MB limit.` : '.'));
+      }
+      const unchecked = list.filter((i) => i.sizeUnchecked).length;
+      if (this.maxBytes && unchecked) {
+        notes.push(`${unchecked} ${label} could not be checked against the size limit because the platform does not report their size.`);
       }
     }
 

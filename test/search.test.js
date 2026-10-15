@@ -147,3 +147,66 @@ test('returns exactly the number of images and videos asked for', async () => {
     assert.deepEqual(r.notes, []);
   }
 });
+
+test('size limit: keeps files under the limit, using a smaller version when there is one', async () => {
+  const MB = 1024 * 1024;
+  // Pexels videos come with HD (25 MB) and SD (8 MB) files; every third clip has only a 40 MB file.
+  const videos = (q) => ({
+    videos: Array.from({ length: 12 }, (_, i) => ({
+      id: 700 + i, width: 1920, height: 1080, duration: 10, url: `https://www.pexels.com/video/${q}-${700 + i}/`,
+      image: 'https://images.pexels.com/t.jpg', user: { name: 'A' },
+      video_files: i % 3 === 0
+        ? [{ file_type: 'video/mp4', width: 1920, height: 1080, size: 40 * MB, link: `https://videos.pexels.com/${i}/big.mp4` }]
+        : [
+          { file_type: 'video/mp4', width: 1920, height: 1080, size: 25 * MB, link: `https://videos.pexels.com/${i}/hd.mp4` },
+          { file_type: 'video/mp4', width: 960, height: 540, size: 8 * MB, link: `https://videos.pexels.com/${i}/sd.mp4` },
+        ],
+    })),
+  });
+  const heads = [];
+  mockFetch([
+    [(u) => u.pathname === '/v1/search', (u) => json(pexelsPhotos(u.searchParams.get('query'), 12))],
+    [(u) => u.pathname === '/videos/search', (u) => json(videos(u.searchParams.get('query')))],
+    // Image sizes are not in the API, so they are checked with HEAD requests: every other photo is 15 MB.
+    [(u) => u.hostname === 'images.pexels.com', (u) => {
+      heads.push(u.href);
+      const n = Number(u.pathname.split('/')[2]);
+      return new Response(null, { headers: { 'content-length': String((n % 2 ? 15 : 3) * MB) } });
+    }],
+  ]);
+  const active = resolveProviders({ pexels: { enabled: true, key: 'k' } });
+  const [r] = await searchAllTopics([topic('t1', 'Forest', ['forest'])], active, { perTopic: 4, maxFileMB: 20 });
+  assert.equal(r.videos.length, 4);
+  for (const v of r.videos) {
+    assert.ok(v.size <= 20 * MB, `video ${v.id} is ${v.size / MB} MB`);
+    assert.match(v.downloadUrl, /sd\.mp4$/, 'the 8 MB SD file replaces the 25 MB HD file');
+    assert.equal(v.smallerVersion, true);
+  }
+  assert.equal(r.images.length, 4);
+  for (const i of r.images) assert.ok(i.size <= 20 * MB);
+  assert.ok(heads.length > 0, 'image sizes were checked');
+  assert.deepEqual(r.notes, []);
+});
+
+test('size limit: reports when too few files fit', async () => {
+  const MB = 1024 * 1024;
+  mockFetch([
+    [(u) => u.pathname === '/v1/search', (u) => json(pexelsPhotos(u.searchParams.get('query'), 6))],
+    [(u) => u.pathname === '/videos/search', () => json({ videos: [] })],
+    [(u) => u.hostname === 'images.pexels.com', () => new Response(null, { headers: { 'content-length': String(50 * MB) } })],
+  ]);
+  const active = resolveProviders({ pexels: { enabled: true, key: 'k' } });
+  const [r] = await searchAllTopics([topic('t1', 'Huge', ['huge'])], active, { perTopic: 3, maxFileMB: 5 });
+  assert.equal(r.images.length, 0);
+  assert.ok(r.notes.some((n) => /over the 5 MB limit/.test(n)), r.notes.join(' / '));
+});
+
+test('no size limit: no size checks are made', async () => {
+  const calls = mockFetch([
+    [(u) => u.pathname === '/v1/search', (u) => json(pexelsPhotos(u.searchParams.get('query'), 8))],
+    [(u) => u.pathname === '/videos/search', (u) => json(pexelsVideos(u.searchParams.get('query'), 8))],
+  ]);
+  const active = resolveProviders({ pexels: { enabled: true, key: 'k' } });
+  await searchAllTopics([topic('t1', 'Forest', ['forest'])], active, { perTopic: 3 });
+  assert.ok(calls.every((c) => c.url.hostname === 'api.pexels.com'));
+});

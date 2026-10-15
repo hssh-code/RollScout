@@ -68,6 +68,12 @@ export default {
           previewUrl: info.thumburl || info.url,
           displayUrl: info.thumburl || info.url,
           downloadUrl,
+          size: downloadUrl === info.url ? info.size : undefined,
+          renditions: [
+            { url: downloadUrl, width: downloadUrl === info.url ? info.width : 1920, size: downloadUrl === info.url ? info.size : undefined },
+            info.thumburl && info.width > 1280 ? { url: info.thumburl.replace(/\/\d+px-/, '/1280px-'), width: 1280 } : null,
+            info.thumburl ? { url: info.thumburl, width: 640 } : null,
+          ].filter(Boolean),
           ext: extFromUrl(info.url, 'jpg'),
         };
       });
@@ -85,6 +91,8 @@ export default {
           previewUrl: info.thumburl,
           displayUrl: info.url,
           downloadUrl: info.url,
+          size: info.size,
+          renditions: [{ url: info.url, width: info.width, height: info.height, size: info.size }],
           ext: extFromUrl(info.url, 'webm'),
         };
       });

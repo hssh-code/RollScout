@@ -98,6 +98,11 @@
               <option value="highest">Highest available (can be 4K)</option>
             </select>
           </div>
+          <div class="field">
+            <label for="max-file-mb">Maximum file size (MB)</label>
+            <input type="number" id="max-file-mb" min="1" max="10000" step="1" placeholder="No limit">
+            <span class="muted small">Skips any image or video bigger than this. For videos, a smaller version of the same clip is used when one fits. Leave empty for no limit.</span>
+          </div>
         </div>
         <fieldset class="ai-box">
           <legend>Topic detection</legend>

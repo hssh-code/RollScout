@@ -1,4 +1,4 @@
-import { fetchJson, extFromUrl, pickRendition } from '../http.js';
+import { fetchJson, extFromUrl, pickRendition, fallbackRenditions } from '../http.js';
 
 const NAME = 'Pixabay';
 
@@ -39,6 +39,10 @@ export const pixabayImages = {
       previewUrl: h.webformatURL || h.previewURL,
       displayUrl: h.largeImageURL || h.webformatURL,
       downloadUrl: h.largeImageURL || h.webformatURL,
+      renditions: [
+        { url: h.largeImageURL, width: 1280 },
+        { url: h.webformatURL, width: 640 },
+      ].filter((r) => r.url),
       ext: extFromUrl(h.largeImageURL || h.webformatURL, 'jpg'),
       pageUrl: h.pageURL,
       author: h.user,
@@ -71,7 +75,7 @@ export const pixabayVideos = {
       const files = ['tiny', 'small', 'medium', 'large']
         .map((k) => sizes[k])
         .filter((f) => f && f.url)
-        .map((f) => ({ url: f.url, width: f.width, height: f.height, thumbnail: f.thumbnail }));
+        .map((f) => ({ url: f.url, width: f.width, height: f.height, size: f.size || undefined, thumbnail: f.thumbnail }));
       const best = pickRendition(files, videoQuality);
       const small = pickRendition(files, 'sd');
       if (!best) return null;
@@ -91,6 +95,8 @@ export const pixabayVideos = {
         previewUrl: thumb,
         displayUrl: small?.url || best.url,
         downloadUrl: best.url,
+        size: best.size,
+        renditions: fallbackRenditions(best, files),
         ext: extFromUrl(best.url, 'mp4'),
         pageUrl: h.pageURL,
         author: h.user,
